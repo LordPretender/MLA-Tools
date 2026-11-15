@@ -4,13 +4,13 @@ namespace MlaTools;
 internal class FormBase : Form
 {
     // Partagée par toutes les fenêtres et vivante autant que l'application : aucune fenêtre n'en est propriétaire, donc aucune ne la libère.
-    private static readonly Icon? _iconeApplication = ChargerIconeApplication();
+    private static readonly Icon? IconeApplication = ChargerIconeApplication();
 
     public FormBase()
     {
-        if (_iconeApplication is not null)
+        if (IconeApplication is not null)
         {
-            Icon = _iconeApplication;
+            Icon = IconeApplication;
         }
     }
 

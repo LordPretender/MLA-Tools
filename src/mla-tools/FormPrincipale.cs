@@ -1,4 +1,3 @@
-using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
 using static MlaTools.Constantes;
@@ -53,7 +52,12 @@ internal sealed class FormPrincipale : FormBase
         MaximizeBox = false;
         ClientSize = new Size(580, 580);
         MinimumSize = Size;
+        Controls.Add(ConstruireColonne());
+        AbonnerEvenements();
+    }
 
+    private TableLayoutPanel ConstruireColonne()
+    {
         var consigne = new Label
         {
             Text = "1. Dans le jeu, affichez la fiche « Info » d'un héros, puis cliquez sur le bouton de cette fiche "
@@ -87,8 +91,11 @@ internal sealed class FormPrincipale : FormBase
         ligneDelai.Controls.Add(new Label { Text = "Délai après chaque clic (ms) :", AutoSize = true, Margin = new Padding(3, 8, 3, 0) });
         ligneDelai.Controls.Add(_delaiApresClic);
         colonne.Controls.Add(OutilsDialogue.Groupe("Lecture", OutilsDialogue.Pile(_boutonLire, ligneLireTous, ligneDelai)));
-        Controls.Add(colonne);
+        return colonne;
+    }
 
+    private void AbonnerEvenements()
+    {
         _boutonRafraichir.Click += (_, _) => RafraichirFenetres();
         _boutonSimple.Click += (_, _) => Calibrer(Dispositions.Simple);
         _boutonHybride.Click += (_, _) => Calibrer(Dispositions.Hybride);
@@ -127,7 +134,7 @@ internal sealed class FormPrincipale : FormBase
     }
 
     private static bool EstErreurAttendue(Exception ex) =>
-        ex is InvalidOperationException or JsonException or IOException or DbException;
+        BaseSqlite.EstErreurAcces(ex) || ex is JsonException;
 
     // Une base illisible ou une valeur absente laisse les valeurs par défaut : ces réglages ne valent pas un blocage.
     private void RestaurerReglagesLecture()

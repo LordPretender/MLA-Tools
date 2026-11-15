@@ -111,6 +111,15 @@ internal static class OutilsDialogue
     public static string LibelleDate(DateTime? date) =>
         date?.ToString(FormatDateAffichee, CultureInfo.InvariantCulture) ?? LibelleDateInconnue;
 
+    /// <summary>Tableau libellé / champ : la colonne des libellés suit son contenu, celle des champs absorbe la largeur.</summary>
+    public static TableLayoutPanel TableChamps(int marge)
+    {
+        var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(marge) };
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        return table;
+    }
+
     public static void AjouterLigne(TableLayoutPanel table, string titre, Control champ)
     {
         table.Controls.Add(new Label { Text = titre, AutoSize = true, Margin = new Padding(3, 6, 16, 3) });

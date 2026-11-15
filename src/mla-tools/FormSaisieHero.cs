@@ -67,9 +67,8 @@ internal sealed class FormSaisieHero : FormDialogue
 
     private TableLayoutPanel ConstruireChamps()
     {
-        var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(10) };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var table = OutilsDialogue.TableChamps(10);
+
 
         var cases = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
         cases.Controls.AddRange([.. _factions]);

@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Data.Common;
 using System.Globalization;
 using static MlaTools.Constantes;
 
@@ -214,8 +213,6 @@ internal sealed class FormEquipes : FormBase
 
     private static TabPage NouvellePage(string titre) =>
         new(titre) { UseVisualStyleBackColor = false, BackColor = OutilsDialogue.FondFenetre };
-
-    // ---------- Construction de l'interface ----------
 
     private MenuStrip ConstruireMenu()
     {
@@ -436,8 +433,6 @@ internal sealed class FormEquipes : FormBase
         barre.Controls.Add(filtre);
     }
 
-    // ---------- Chargement depuis la base ----------
-
     private void Recharger()
     {
         if (!Proteger(ChargerDepuisBase))
@@ -558,8 +553,6 @@ internal sealed class FormEquipes : FormBase
 
     private MoteurEquipes CreerMoteur() =>
         new(_heros.Select(h => MoteurEquipes.CreerHero(h.Id, h.Hero.Etoiles, h.Hero.Classe, h.Hero.Factions, h.LienAme, h.Hero.Equipement)), _roles);
-
-    // ---------- Onglet Héros ----------
 
     private void RemplirGrilleHeros()
     {
@@ -795,8 +788,6 @@ internal sealed class FormEquipes : FormBase
         }
     }
 
-    // ---------- Menus Fichier, Équipes, Outils et Aide ----------
-
     // La fenêtre se masque le temps de la capture : elle ne doit pas gêner la lecture de l'écran du jeu.
     private void OuvrirCapture()
     {
@@ -855,8 +846,6 @@ internal sealed class FormEquipes : FormBase
 
     private void AfficherAPropos() =>
         MessageBox.Show(this, $"{TitreApplication}{Environment.NewLine}Héros et équipes de Mobile Legends Adventure.", "À propos", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
-    // ---------- Onglet Équipes ----------
 
     private void GenererEquipes()
     {
@@ -1010,8 +999,6 @@ internal sealed class FormEquipes : FormBase
         _synthese.Text = $"{_heros.Count} héros{separateur}{places} places{suite}";
     }
 
-    // ---------- Cartes d'équipe ----------
-
     private void AfficherCartes()
     {
         RafraichirSynthese();
@@ -1025,8 +1012,6 @@ internal sealed class FormEquipes : FormBase
         _colonnesAffichees = _cartes.Afficher(_zoneCartes, _zoneReserve, affichees, _reserve, string.Empty);
     }
 
-    // ---------- Accès protégé à la base ----------
-
     // Retourne false après avoir signalé l'erreur : l'état affiché reste celui d'avant l'échec.
     private bool Proteger(Action action)
     {
@@ -1035,7 +1020,7 @@ internal sealed class FormEquipes : FormBase
             action();
             return true;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or DbException)
+        catch (Exception ex) when (BaseSqlite.EstErreurAcces(ex))
         {
             // Un dialogue peut être ouvert : l'erreur s'affiche au-dessus de lui, pas derrière.
             MessageBox.Show(ActiveForm ?? this, ex.Message, TitreApplication, MessageBoxButtons.OK, MessageBoxIcon.Warning);

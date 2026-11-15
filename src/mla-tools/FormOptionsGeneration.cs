@@ -35,9 +35,8 @@ internal sealed class FormOptionsGeneration : FormDialogue
 
     private TableLayoutPanel ConstruireChamps()
     {
-        var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(14) };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var table = OutilsDialogue.TableChamps(14);
+
 
         OutilsDialogue.AjouterLigne(table, "Poids des rôles", _poidsRoles);
         OutilsDialogue.AjouterLigne(table, "Poids de la résonance", _poidsResonance);

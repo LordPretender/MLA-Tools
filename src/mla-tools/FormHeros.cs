@@ -1,4 +1,3 @@
-using System.Data.Common;
 using static MlaTools.Constantes;
 
 namespace MlaTools;
@@ -130,7 +129,7 @@ internal sealed class FormHeros : FormBase
             }
             return true;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or DbException)
+        catch (Exception ex) when (BaseSqlite.EstErreurAcces(ex))
         {
             MessageBox.Show(this, ex.Message, TitreApplication, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return false;
@@ -202,7 +201,7 @@ internal sealed class FormHeros : FormBase
             _herosConnus = BaseSqlite.ListerHeros(BaseSqlite.CheminParDefaut)
                 .ToDictionary(h => Referentiel.Normaliser(h.Hero.Nom), h => h.Hero);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException or DbException)
+        catch (Exception ex) when (BaseSqlite.EstErreurAcces(ex))
         {
             _herosConnus = null;
         }

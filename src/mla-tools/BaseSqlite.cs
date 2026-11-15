@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Globalization;
 using Microsoft.Data.Sqlite;
 
@@ -115,6 +116,8 @@ internal static class BaseSqlite
     public const string MarqueurPresent = "1";
 
     private const string NomFichier = "mla-heros.db";
+    private const string TableHeros = "heros";
+    private const string TableCompositions = "compositions";
     private const string ColonneLienAme = "lien_ame";
     private const string ColonneNombreEquipes = "nombre_equipes";
     private const string ColonneDateMaj = "date_maj";
@@ -180,6 +183,9 @@ internal static class BaseSqlite
     };
 
     public static string CheminParDefaut => Path.Combine(AppContext.BaseDirectory, NomFichier);
+
+    /// <summary>Erreurs attendues d'un accès à la base (fichier inaccessible, base illisible) : à signaler à l'utilisateur plutôt que laisser planter.</summary>
+    public static bool EstErreurAcces(Exception ex) => ex is InvalidOperationException or IOException or DbException;
 
     // Une transaction pour tout le lot : une erreur au milieu n'écrit aucun héros.
     public static ResultatEnregistrement Enregistrer(IEnumerable<Hero> heros, string chemin)
@@ -464,17 +470,17 @@ internal static class BaseSqlite
             }
         }
         // CREATE TABLE IF NOT EXISTS ne touche pas une table existante : la colonne du lien d'âme s'ajoute à part.
-        if (!ColonneExiste(connexion, transaction, "heros", ColonneLienAme))
+        if (!ColonneExiste(connexion, transaction, TableHeros, ColonneLienAme))
         {
             Executer(connexion, transaction, $"ALTER TABLE heros ADD COLUMN {ColonneLienAme} INTEGER NOT NULL DEFAULT 0");
         }
         // Les héros déjà en base gardent une date inconnue (NULL) : on ne peut pas deviner quand ils ont été saisis.
-        if (!ColonneExiste(connexion, transaction, "heros", ColonneDateMaj))
+        if (!ColonneExiste(connexion, transaction, TableHeros, ColonneDateMaj))
         {
             Executer(connexion, transaction, $"ALTER TABLE heros ADD COLUMN {ColonneDateMaj} TEXT NULL");
         }
         // Les compositions déjà enregistrées reçoivent le nombre d'équipes que leurs lignes laissent deviner.
-        if (!ColonneExiste(connexion, transaction, "compositions", ColonneNombreEquipes))
+        if (!ColonneExiste(connexion, transaction, TableCompositions, ColonneNombreEquipes))
         {
             Executer(connexion, transaction, $"ALTER TABLE compositions ADD COLUMN {ColonneNombreEquipes} INTEGER NOT NULL DEFAULT 0");
             Executer(connexion, transaction, $"""

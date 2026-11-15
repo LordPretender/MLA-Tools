@@ -24,9 +24,8 @@ internal sealed class FormSaisieNom : FormDialogue
         _messageNomPris = messageNomPris;
 
         _nom.Text = nomInitial;
-        var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(10) };
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var table = OutilsDialogue.TableChamps(10);
+
         OutilsDialogue.AjouterLigne(table, "Nom", _nom);
         if (nombreEquipesInitial is { } initial)
         {
