@@ -11,7 +11,7 @@ Un assistant pour Mobile Legends: Adventure : il lit tes héros directement dans
 
 ## Comment l'utiliser
 
-Fonctionne sous Windows uniquement. Pour l'instant, l'outil se compile soi-même (voir « Compiler et lancer » plus bas).
+Fonctionne sous Windows uniquement. Télécharge `mla-tools.exe` depuis la [dernière release](https://github.com/LordPretender/MLA-Tools/releases/latest), ou compile-le toi-même (voir « Compiler et lancer » plus bas).
 
 1. Dans le jeu, ouvre la fiche « Info » d'un héros
 2. Dans MLA Tools, choisis la fenêtre du jeu puis clique sur « Lire les héros »
