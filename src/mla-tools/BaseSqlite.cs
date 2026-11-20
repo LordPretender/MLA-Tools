@@ -48,6 +48,22 @@ internal sealed record Affectation(int HeroId, int? Equipe, int Position)
         (listeA[listeA.IndexOf(a)], listeB[listeB.IndexOf(b)]) = (b, a);
     }
 
+    /// <summary>
+    /// Faux quand l'échange ferait entrer en équipe une forme dont le même héros combattrait déjà dans une équipe. Seul un échange entre une équipe et la réserve
+    /// change la liste des combattants : entre deux équipes ou dans la réserve, il est toujours permis, ce qui laisse modifiable une composition déjà en doublon.
+    /// </summary>
+    public static bool EchangeAutorise(IReadOnlyList<List<int>> equipes, IReadOnlyList<int> reserve, int a, int b, Func<int, int> famille)
+    {
+        var aEnReserve = reserve.Contains(a);
+        if (aEnReserve == reserve.Contains(b))
+        {
+            return true;
+        }
+
+        var (entrant, sortant) = aEnReserve ? (a, b) : (b, a);
+        return !equipes.SelectMany(e => e).Any(h => h != sortant && famille(h) == famille(entrant));
+    }
+
     /// <summary>Envoie un héros d'équipe en fin de réserve ; sans effet s'il n'est dans aucune équipe.</summary>
     public static bool EnvoyerEnReserve(IReadOnlyList<List<int>> equipes, List<int> reserve, int id)
     {

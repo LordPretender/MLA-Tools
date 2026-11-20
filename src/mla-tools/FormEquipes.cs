@@ -551,8 +551,11 @@ internal sealed class FormEquipes : FormBase
         }
     }
 
-    private MoteurEquipes CreerMoteur() =>
-        new(_heros.Select(h => MoteurEquipes.CreerHero(h.Id, h.Hero.Etoiles, h.Hero.Classe, h.Hero.Factions, h.LienAme, h.Hero.Equipement)), _roles);
+    private MoteurEquipes CreerMoteur()
+    {
+        var familles = Referentiel.Familles(_heros.Select(h => (h.Id, h.Hero.Nom)));
+        return new(_heros.Select(h => MoteurEquipes.CreerHero(h.Id, h.Hero.Etoiles, h.Hero.Classe, h.Hero.Factions, h.LienAme, h.Hero.Equipement, familles[h.Id])), _roles);
+    }
 
     private void RemplirGrilleHeros()
     {
@@ -969,7 +972,11 @@ internal sealed class FormEquipes : FormBase
 
     private void Cliquer(int id)
     {
-        if (Affectation.BasculerSelection(ref _selection, _equipes, _reserve, id))
+        if (_selection is { } premier && premier != id && OutilsDialogue.RefuserDoublonHeros(this, _equipes, _reserve, premier, id, _moteur.FamilleDe))
+        {
+            _selection = null;
+        }
+        else if (Affectation.BasculerSelection(ref _selection, _equipes, _reserve, id))
         {
             Proteger(SauvegarderRepartition);
         }

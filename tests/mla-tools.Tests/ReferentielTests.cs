@@ -58,6 +58,32 @@ public class ReferentielTests
         Assert.Null(Referentiel.Rapprocher(lu, Candidats));
 
     [Fact]
+    public void Familles_QualificatifDevantUnNom_RegroupeLesDeuxFiches()
+    {
+        var familles = Referentiel.Familles([(1, "Singularity Lunox"), (2, "Lunox"), (3, "Layla")]);
+
+        Assert.Equal(familles[2], familles[1]);
+        Assert.NotEqual(familles[2], familles[3]);
+    }
+
+    [Fact]
+    public void Familles_NomSeulementContenuDansUnAutre_NeRegroupePas()
+    {
+        var familles = Referentiel.Familles([(1, "Lunoxa"), (2, "Lunox")]);
+
+        Assert.NotEqual(familles[2], familles[1]);
+    }
+
+    [Fact]
+    public void Familles_NomVide_RestePropreFamille()
+    {
+        var familles = Referentiel.Familles([(1, ""), (2, "Lunox")]);
+
+        Assert.Equal(1, familles[1]);
+        Assert.Equal(2, familles[2]);
+    }
+
+    [Fact]
     public void Factions_ContientLesFactionsRegulieresEtLesFactionsSpeciales()
     {
         Assert.All(Referentiel.FactionsRegulieres, faction => Assert.Contains(faction, Referentiel.Factions));

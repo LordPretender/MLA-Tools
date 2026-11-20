@@ -51,6 +51,21 @@ internal static class Referentiel
         return sb.ToString().Trim();
     }
 
+    // Deux fiches forment un même héros en combat quand l'une porte le nom de l'autre précédé d'un qualificatif (« Singularity Lunox » et « Lunox »).
+    // La famille est l'identifiant du nom le plus court du groupe ; un nom vide ne rejoint aucun groupe.
+    public static Dictionary<int, int> Familles(IEnumerable<(int Id, string Nom)> heros)
+    {
+        var normes = heros.Select(h => (h.Id, Norme: Normaliser(h.Nom))).ToList();
+        return normes.ToDictionary(
+            h => h.Id,
+            h => h.Norme.Length == 0
+                ? h.Id
+                : normes
+                    .Where(b => b.Norme.Length > 0 && (b.Norme == h.Norme || h.Norme.EndsWith(' ' + b.Norme, StringComparison.Ordinal)))
+                    .OrderBy(b => b.Norme.Length).ThenBy(b => b.Id)
+                    .First().Id);
+    }
+
     // Retourne null si rien n'est assez proche ou si deux valeurs sont à égalité : une valeur illisible n'est jamais devinée.
     public static string? Rapprocher(string lu, IReadOnlyList<string> canoniques)
     {

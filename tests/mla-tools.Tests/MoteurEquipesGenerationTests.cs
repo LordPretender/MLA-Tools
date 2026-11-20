@@ -9,6 +9,9 @@ public class MoteurEquipesGenerationTests
     private const int ReferenceSansVariante = 1;
     private const int MinimumEtoilesEquipe = 30;
     private const int EtoilesHeroFort = 10;
+    private const int FamilleDesDeuxFormes = 3;
+    // Assez grand pour que chaque famille ainsi numérotée diffère de tous les identifiants de héros du jeu de test.
+    private const int DecalageFamilleDistincte = 100;
 
     // Le mode passe par son nom : ModeGeneration est internal, un paramètre de test public ne peut pas en porter le type.
     public static IEnumerable<object[]> Modes => Enum.GetNames<ModeGeneration>().Select(nom => new object[] { nom });
@@ -91,6 +94,45 @@ public class MoteurEquipesGenerationTests
             var presents = variante.Equipes.SelectMany(e => e).Concat(variante.Reserve).Order();
             Assert.Equal(heros.Select(h => h.Id).Order(), presents);
         }
+    }
+
+    // Les héros 3 et 5 sont deux formes du même héros : les deux DPS les mieux dotés, que la génération voudrait réunir.
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Deux_formes_du_meme_heros_ne_sont_jamais_dans_les_equipes_ensemble(string nomMode)
+    {
+        var mode = Enum.Parse<ModeGeneration>(nomMode);
+        var moteur = Moteur([.. JeuVarie().Select(h => h.Id is 3 or 5 ? h with { Famille = FamilleDesDeuxFormes } : h)]);
+
+        foreach (var variante in Variantes(moteur, 2, mode))
+        {
+            var enEquipe = variante.Equipes.SelectMany(e => e).ToList();
+            Assert.False(enEquipe.Contains(3) && enEquipe.Contains(5));
+        }
+    }
+
+    [Fact]
+    public void Deux_formes_du_meme_heros_dans_un_stock_de_cinq_laissent_l_une_en_reserve()
+    {
+        var moteur = Moteur(
+            Hero(1, ClasseTank), Hero(2, ClasseDps), Hero(3, ClasseDps, famille: 2), Hero(4, ClasseSoutien), Hero(5, ClasseTank));
+
+        var repartition = Assert.Single(Variantes(moteur, 1, ModeGeneration.MeilleureEquipeDAbord, ReferenceSansVariante));
+
+        Assert.Equal(MoteurEquipes.TailleEquipe - 1, repartition.Equipes[0].Count);
+        Assert.Single(repartition.Reserve);
+    }
+
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Sans_famille_partagee_la_generation_est_celle_d_origine(string nomMode)
+    {
+        var mode = Enum.Parse<ModeGeneration>(nomMode);
+        var heros = JeuVarie();
+
+        Assert.Equal(
+            Empreinte(Variantes(Moteur(heros), 2, mode)),
+            Empreinte(Variantes(Moteur([.. heros.Select(h => h with { Famille = h.Id + DecalageFamilleDistincte })]), 2, mode)));
     }
 
     [Theory]

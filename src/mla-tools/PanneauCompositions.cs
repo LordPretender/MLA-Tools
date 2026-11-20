@@ -165,7 +165,11 @@ internal sealed class PanneauCompositions : UserControl
 
     private void Cliquer(int id)
     {
-        if (Affectation.BasculerSelection(ref _selection, _equipes, _reserve, id))
+        if (_selection is { } premier && premier != id && OutilsDialogue.RefuserDoublonHeros(this, _equipes, _reserve, premier, id, _cartes.Moteur.FamilleDe))
+        {
+            _selection = null;
+        }
+        else if (Affectation.BasculerSelection(ref _selection, _equipes, _reserve, id))
         {
             Enregistrer();
         }
@@ -188,11 +192,13 @@ internal sealed class PanneauCompositions : UserControl
     private void Ajouter(int index)
     {
         // Un héros déjà dans une équipe n'est pas proposé : il se déplace par l'échange, pour n'apparaître qu'une fois.
-        var candidats = _heros.Values.Where(h => !_equipes.Any(e => e.Contains(h.Id)))
+        // Il en va de même d'une autre forme d'un héros déjà en équipe : sa famille y est déjà représentée.
+        var famillesEnEquipe = _equipes.SelectMany(e => e).Select(_cartes.Moteur.FamilleDe).ToHashSet();
+        var candidats = _heros.Values.Where(h => !_equipes.Any(e => e.Contains(h.Id)) && !famillesEnEquipe.Contains(_cartes.Moteur.FamilleDe(h.Id)))
             .OrderBy(h => h.Hero.Nom, StringComparer.CurrentCultureIgnoreCase).ToList();
         if (candidats.Count == 0)
         {
-            MessageBox.Show(this, "Aucun héros disponible : tous sont déjà dans une équipe.", Constantes.TitreApplication);
+            MessageBox.Show(this, "Aucun héros disponible : tous sont déjà dans une équipe, ou en sont une autre forme.", Constantes.TitreApplication);
             return;
         }
 

@@ -168,6 +168,29 @@ public class AffectationTests
         Assert.Equal(Listes([3, 2], [1, 4]), equipes);
     }
 
+    // Les héros 1 et 5 sont deux formes du même héros ; les autres sont chacun leur famille.
+    private static int FamilleUnEtCinq(int id) => id == 5 ? 1 : id;
+
+    [Theory]
+    [InlineData(5, 3, false)]
+    [InlineData(5, 1, true)]
+    [InlineData(5, 2, false)]
+    [InlineData(2, 5, false)]
+    public void EchangeAutorise_EquipeEtReserve_RefuseSeulementSiLaFormeEstDejaEnEquipe(int a, int b, bool attendu)
+    {
+        var (equipes, reserve) = Situation();
+
+        Assert.Equal(attendu, Affectation.EchangeAutorise(equipes, reserve, a, b, FamilleUnEtCinq));
+    }
+
+    [Fact]
+    public void EchangeAutorise_EntreDeuxEquipes_EstToujoursPermis()
+    {
+        var (equipes, reserve) = (Listes([1, 2], [5, 4]), new List<int>());
+
+        Assert.True(Affectation.EchangeAutorise(equipes, reserve, 2, 5, FamilleUnEtCinq));
+    }
+
     [Fact]
     public void Aplatir_UtiliseLOrdreDesListesCommePosition()
     {

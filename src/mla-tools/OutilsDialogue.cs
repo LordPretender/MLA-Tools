@@ -111,6 +111,19 @@ internal static class OutilsDialogue
     public static string LibelleDate(DateTime? date) =>
         date?.ToString(FormatDateAffichee, CultureInfo.InvariantCulture) ?? LibelleDateInconnue;
 
+    /// <summary>Vrai, après avoir prévenu l'utilisateur, quand l'échange des deux héros réunirait deux formes du même personnage dans les équipes : il ne doit alors pas avoir lieu.</summary>
+    public static bool RefuserDoublonHeros(
+        IWin32Window parent, IReadOnlyList<List<int>> equipes, IReadOnlyList<int> reserve, int premier, int second, Func<int, int> famille)
+    {
+        if (Affectation.EchangeAutorise(equipes, reserve, premier, second, famille))
+        {
+            return false;
+        }
+
+        MessageBox.Show(parent, Constantes.MessageDoublonHeros, Constantes.TitreApplication, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        return true;
+    }
+
     /// <summary>Tableau libellé / champ : la colonne des libellés suit son contenu, celle des champs absorbe la largeur.</summary>
     public static TableLayoutPanel TableChamps(int marge)
     {

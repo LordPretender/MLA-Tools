@@ -3,6 +3,7 @@ namespace MlaTools;
 internal static class Constantes
 {
     public const string TitreApplication = "MLA Tools";
+    public const string MessageDoublonHeros = "Ces deux héros sont deux formes du même personnage : elles ne peuvent pas combattre ensemble dans une composition.";
 }
 
 internal static class Program

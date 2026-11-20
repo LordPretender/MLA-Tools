@@ -2,7 +2,7 @@ using FonctionCout = System.Func<System.Collections.Generic.List<MlaTools.Evalua
 
 namespace MlaTools;
 
-internal sealed record HeroMoteur(int Id, int Etoiles, string Classe, IReadOnlyList<string> Factions, string Equipement);
+internal sealed record HeroMoteur(int Id, int Etoiles, string Classe, IReadOnlyList<string> Factions, string Equipement, int? Famille = null);
 
 internal sealed record PoidsEquipes(double Roles, double Resonance, double Etoiles)
 {
@@ -72,7 +72,7 @@ internal sealed class MoteurEquipes
 
     // Un tank secondaire est un héros lourd qui n'a pas le rôle Tank ; un héros moyen de rôle Tank est déjà compté comme tank.
     private sealed record InfoHero(
-        int Id, int Etoiles, string Role, int IndexRole, int[] Options, ulong Masque, bool ChaosPur, bool TankSecondaire, bool Moyen, string Equipement);
+        int Id, int Etoiles, string Role, int IndexRole, int[] Options, ulong Masque, bool ChaosPur, bool TankSecondaire, bool Moyen, string Equipement, int Famille);
 
     private readonly record struct Resonance(int Points, int Premier, int PremiereFaction, int SecondeFaction);
 
@@ -84,6 +84,8 @@ internal sealed class MoteurEquipes
     private readonly Dictionary<string, EvaluationEquipe> _cache = [];
     private Random _hasard = new(GraineParDefaut);
     private int[][] _optionsEquipe = new int[TailleEquipe][];
+    // Sans héros de même famille, aucun échange n'a à être contrôlé : la recherche garde alors exactement son parcours d'origine.
+    private readonly bool _famillesPartagees;
 
     public MoteurEquipes(IEnumerable<HeroMoteur> heros, IReadOnlyDictionary<string, string> roles)
     {
@@ -92,10 +94,13 @@ internal sealed class MoteurEquipes
             IndexerFaction(faction);
         }
         _infos = heros.Select(h => Construire(h, roles)).ToDictionary(h => h.Id);
+        _famillesPartagees = _infos.Values.Select(h => h.Famille).Distinct().Count() < _infos.Count;
         _comptes = new int[_factions.Count];
     }
 
     public string RoleDe(int heroId) => _infos[heroId].Role;
+
+    public int FamilleDe(int heroId) => _infos[heroId].Famille;
 
     public EvaluationEquipe Evaluer(IReadOnlyList<int> ids)
     {
@@ -139,8 +144,8 @@ internal sealed class MoteurEquipes
     }
 
     // Le lien d'âme fait compter le héros dans la faction Ordre pour la résonance, sans changer ses factions affichées.
-    public static HeroMoteur CreerHero(int id, int etoiles, string classe, IReadOnlyList<string> factions, bool lienAme, string equipement) =>
-        new(id, etoiles, classe, lienAme && !factions.Contains(FactionOrdre) ? [.. factions, FactionOrdre] : factions, equipement);
+    public static HeroMoteur CreerHero(int id, int etoiles, string classe, IReadOnlyList<string> factions, bool lienAme, string equipement, int? famille = null) =>
+        new(id, etoiles, classe, lienAme && !factions.Contains(FactionOrdre) ? [.. factions, FactionOrdre] : factions, equipement, famille);
 
     private InfoHero Construire(HeroMoteur hero, IReadOnlyDictionary<string, string> roles)
     {
@@ -152,6 +157,7 @@ internal sealed class MoteurEquipes
             _ => IndexSoutien,
         };
 
+        var famille = hero.Famille ?? hero.Id;
         var equipement = Referentiel.Normaliser(hero.Equipement);
         var estTank = indexRole == IndexTank;
         var tankSecondaire = !estTank && equipement == Referentiel.EquipementLourd;
@@ -161,7 +167,7 @@ internal sealed class MoteurEquipes
         var factions = hero.Factions.Where(f => f != FactionChaos).ToList();
         if (factions.Count == 0)
         {
-            return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, [], 0, true, tankSecondaire, moyen, equipement);
+            return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, [], 0, true, tankSecondaire, moyen, equipement, famille);
         }
         if (factions.Contains(FactionOrdre))
         {
@@ -170,7 +176,7 @@ internal sealed class MoteurEquipes
 
         var options = factions.Select(IndexerFaction).ToArray();
         var masque = options.Aggregate(0UL, (acc, index) => acc | (1UL << index));
-        return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, options, masque, false, tankSecondaire, moyen, equipement);
+        return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, options, masque, false, tankSecondaire, moyen, equipement, famille);
     }
 
     private int IndexerFaction(string faction)
@@ -319,9 +325,13 @@ internal sealed class MoteurEquipes
     {
         var restants = _infos.Values.OrderByDescending(h => h.Etoiles).ThenBy(h => h.Id).ToList();
         var equipes = new List<List<int>>();
+        // Une famille déjà engagée dans une équipe n'est plus disponible pour les suivantes : ses autres formes restent en réserve.
+        var famillesEngagees = new HashSet<int>();
         while (equipes.Count < nombreEquipes)
         {
-            var retenus = restants.Count == 0 ? Array.Empty<InfoHero>() : MeilleureEquipe(restants, poids);
+            var candidats = restants.Where(h => !famillesEngagees.Contains(h.Famille)).ToList();
+            var retenus = candidats.Count == 0 ? Array.Empty<InfoHero>() : MeilleureEquipe(candidats, poids);
+            famillesEngagees.UnionWith(retenus.Select(h => h.Famille));
             var ids = retenus.Select(h => h.Id).ToHashSet();
             equipes.Add([.. retenus.Select(h => h.Id)]);
             restants.RemoveAll(h => ids.Contains(h.Id));
@@ -332,7 +342,7 @@ internal sealed class MoteurEquipes
     private InfoHero[] MeilleureEquipe(List<InfoHero> restants, PoidsEquipes poids)
     {
         var reservoir = Reduire(restants);
-        var taille = Math.Min(TailleEquipe, reservoir.Count);
+        var taille = Math.Min(TailleEquipe, reservoir.Select(h => h.Famille).Distinct().Count());
         var courante = new InfoHero[taille];
         var meilleure = new InfoHero[taille];
         var meilleurScore = double.NegativeInfinity;
@@ -352,6 +362,10 @@ internal sealed class MoteurEquipes
             }
             for (var i = debut; i <= reservoir.Count - (taille - position); i++)
             {
+                if (courante.Take(position).Any(h => h.Famille == reservoir[i].Famille))
+                {
+                    continue;
+                }
                 courante[position] = reservoir[i];
                 Choisir(position + 1, i + 1);
             }
@@ -363,22 +377,23 @@ internal sealed class MoteurEquipes
 
     // Retire sans perte les héros « dominés » : s'il en existe au moins TailleEquipe autres de même rôle
     // et de même équipement (le front en dépend), aux étoiles au moins égales et aux factions au moins aussi nombreuses, l'un d'eux est forcément hors de l'équipe
-    // et la remplace sans rien perdre. Au-delà de ReservoirMaximum, on ne garde que les mieux dotés en étoiles.
+    // et la remplace sans rien perdre. Les dominateurs se comptent par famille : quatre coéquipiers bloquent au plus quatre familles, donc cinq familles
+    // dominantes laissent toujours un remplaçant sans doublon. Au-delà de ReservoirMaximum, on ne garde que les mieux dotés en étoiles.
     private static List<InfoHero> Reduire(List<InfoHero> restants)
     {
         var gardes = new List<InfoHero>();
         for (var i = 0; i < restants.Count; i++)
         {
             var hero = restants[i];
-            var dominateurs = 0;
-            for (var j = 0; j < i && dominateurs < TailleEquipe; j++)
+            var dominateurs = new HashSet<int>();
+            for (var j = 0; j < i && dominateurs.Count < TailleEquipe; j++)
             {
                 if (restants[j].IndexRole == hero.IndexRole && restants[j].Equipement == hero.Equipement && (restants[j].Masque & hero.Masque) == hero.Masque)
                 {
-                    dominateurs++;
+                    dominateurs.Add(restants[j].Famille);
                 }
             }
-            if (dominateurs < TailleEquipe)
+            if (dominateurs.Count < TailleEquipe)
             {
                 gardes.Add(hero);
             }
@@ -411,9 +426,27 @@ internal sealed class MoteurEquipes
         {
             if (TirerEchange(listes) is var (a, i, b, j))
             {
-                (listes[a][i], listes[b][j]) = (listes[b][j], listes[a][i]);
+                EchangerSiValide(listes, equipes.Count, (a, i), (b, j));
             }
         }
+    }
+
+    // Deux formes du même héros ne peuvent pas combattre ensemble : un échange qui les réunirait dans les équipes (la réserve, dernière liste, ne combat pas) est annulé.
+    private bool EchangerSiValide(List<List<int>> listes, int nombreEquipes, (int Liste, int Position) premier, (int Liste, int Position) second)
+    {
+        (listes[premier.Liste][premier.Position], listes[second.Liste][second.Position]) = (listes[second.Liste][second.Position], listes[premier.Liste][premier.Position]);
+        if (!_famillesPartagees || SansDoublonDeFamille(listes, nombreEquipes))
+        {
+            return true;
+        }
+        (listes[premier.Liste][premier.Position], listes[second.Liste][second.Position]) = (listes[second.Liste][second.Position], listes[premier.Liste][premier.Position]);
+        return false;
+    }
+
+    private bool SansDoublonDeFamille(List<List<int>> listes, int nombreEquipes)
+    {
+        var vues = new HashSet<int>();
+        return listes.Take(nombreEquipes).SelectMany(e => e).All(id => vues.Add(_infos[id].Famille));
     }
 
     // Deux héros de deux listes distinctes non vides ; null quand le tirage n'en donne pas.
@@ -498,7 +531,10 @@ internal sealed class MoteurEquipes
             var ancienneA = a < nombreEquipes ? evaluations[a] : null;
             var ancienneB = b < nombreEquipes ? evaluations[b] : null;
 
-            (listes[a][i], listes[b][j]) = (listes[b][j], listes[a][i]);
+            if (!EchangerSiValide(listes, nombreEquipes, (a, i), (b, j)))
+            {
+                continue;
+            }
             if (a < nombreEquipes) evaluations[a] = Evaluer(listes[a]);
             if (b < nombreEquipes) evaluations[b] = Evaluer(listes[b]);
 
@@ -566,7 +602,10 @@ internal sealed class MoteurEquipes
         var ancienneA = evaluations[a];
         var ancienneB = b < evaluations.Count ? evaluations[b] : null;
 
-        (listes[a][i], listes[b][j]) = (listes[b][j], listes[a][i]);
+        if (!EchangerSiValide(listes, evaluations.Count, (a, i), (b, j)))
+        {
+            return false;
+        }
         evaluations[a] = Evaluer(listes[a]);
         if (ancienneB is not null) evaluations[b] = Evaluer(listes[b]);
 

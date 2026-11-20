@@ -19,8 +19,8 @@ internal static class OutilsMoteurEquipes
         [ClasseSoutien] = MoteurEquipes.RoleSoutien,
     };
 
-    public static HeroMoteur Hero(int id, string classe, string[]? factions = null, int etoiles = 1, string equipement = EquipementLeger) =>
-        new(id, etoiles, classe, factions ?? [], equipement);
+    public static HeroMoteur Hero(int id, string classe, string[]? factions = null, int etoiles = 1, string equipement = EquipementLeger, int? famille = null) =>
+        new(id, etoiles, classe, factions ?? [], equipement, famille);
 
     // Héros chaos pur : sans autre faction, il ne résonne pas mais donne un bonus aux alliés.
     public static HeroMoteur HeroChaosPur(int id) => Hero(id, ClasseDps, [Referentiel.FactionChaos]);
