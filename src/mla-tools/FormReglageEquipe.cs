@@ -2,11 +2,11 @@ using static MlaTools.Constantes;
 
 namespace MlaTools;
 
-/// <summary>Dialogue des réglages d'une équipe du Générateur, un onglet par critère ; l'étoile minimum n'existe que dans le mode « meilleure équipe d'abord ».</summary>
+/// <summary>Dialogue des réglages d'une équipe du Générateur, un onglet par critère ; le minimum d'étoiles de l'équipe n'existe que dans le mode « meilleure équipe d'abord ».</summary>
 internal sealed class FormReglageEquipe : FormDialogue
 {
-    private const string LibelleMinimum = "Étoiles minimum";
-    private const string MessageAucunReglage = "Aucun réglage disponible dans ce mode.";
+    private const string LibelleMinimum = "Étoiles mini pour l'équipe";
+    private const string LibelleMinimumHeros = "Étoiles mini pour les héros";
     private const string MessageBientot = "Pas encore disponible.";
     private const string OngletHeros = "Héros";
     private const string OngletRoles = "Rôles";
@@ -19,6 +19,7 @@ internal sealed class FormReglageEquipe : FormDialogue
     private readonly int _equipe;
     private readonly IReadOnlyList<HeroStocke> _heros;
     private readonly NumericUpDown? _minimum;
+    private readonly NumericUpDown _minimumHeros;
     private readonly ListBox _imposes = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly ListBox _bannis = new() { Dock = DockStyle.Fill, IntegralHeight = false };
 
@@ -38,19 +39,22 @@ internal sealed class FormReglageEquipe : FormDialogue
         onglets.TabPages.Add(ConstruireOngletVide(OngletRoles));
         onglets.TabPages.Add(ConstruireOngletVide(OngletFactions));
         onglets.TabPages.Add(ConstruireOngletVide(OngletEquipement));
+        var tableEtoiles = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
         if (etoilesMinimum is { } valeur)
         {
             _minimum = new NumericUpDown { Minimum = 0, Maximum = FormOptionsGeneration.EtoilesMinimumMax, Value = valeur, Width = LargeurChamp };
-            var table = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
-            OutilsDialogue.AjouterLigne(table, LibelleMinimum, _minimum);
-            onglets.TabPages.Add(ConstruireOnglet(OngletEtoiles, table));
+            OutilsDialogue.AjouterLigne(tableEtoiles, LibelleMinimum, _minimum);
         }
-        else
-        {
-            onglets.TabPages.Add(ConstruireOnglet(OngletEtoiles, new Label { Text = MessageAucunReglage, Dock = DockStyle.Top, AutoSize = true, ForeColor = Color.DimGray }));
-        }
+        _minimumHeros = new NumericUpDown { Minimum = 0, Maximum = FormOptionsGeneration.EtoilesMinimumMax, Value = Reglages.EtoilesMiniHeros(equipe), Width = LargeurChamp };
+        OutilsDialogue.AjouterLigne(tableEtoiles, LibelleMinimumHeros, _minimumHeros);
+        onglets.TabPages.Add(ConstruireOnglet(OngletEtoiles, tableEtoiles));
 
-        var boutons = ConstruireBoutons(() => DialogResult = DialogResult.OK);
+        // Le seuil par héros vit dans Reglages avec les autres critères : il s'y reporte à la validation seulement.
+        var boutons = ConstruireBoutons(() =>
+        {
+            Reglages.FixerEtoilesMiniHeros(_equipe, (int)_minimumHeros.Value);
+            DialogResult = DialogResult.OK;
+        });
         var reinitialiser = new Button { Text = LibelleReinitialiser, AutoSize = true };
         reinitialiser.Click += (_, _) => Reinitialiser();
         boutons.Controls.Add(reinitialiser);
@@ -64,7 +68,6 @@ internal sealed class FormReglageEquipe : FormDialogue
 
     /// <summary>Minimum saisi ; nul quand le réglage n'était pas proposé.</summary>
     public int? EtoilesMinimum => _minimum is null ? null : (int)_minimum.Value;
-
     private static TabPage ConstruireOnglet(string titre, Control contenu)
     {
         var page = new TabPage(titre) { Padding = new Padding(10) };
@@ -142,6 +145,7 @@ internal sealed class FormReglageEquipe : FormDialogue
         {
             _minimum.Value = 0;
         }
+        _minimumHeros.Value = 0;
         RemplirListes();
     }
 

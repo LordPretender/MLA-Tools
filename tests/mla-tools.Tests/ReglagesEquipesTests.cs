@@ -8,6 +8,7 @@ public class ReglagesEquipesTests
     private const int SecondeEquipe = 1;
     private const int Heros = 7;
     private const int NombreEquipes = 2;
+    private const int SeuilHeros = 4;
 
     [Fact]
     public void Un_heros_ne_peut_pas_etre_impose_a_deux_equipes()
@@ -79,6 +80,45 @@ public class ReglagesEquipesTests
 
         Assert.Equal(reglages.SerialiserImposes(), relu.SerialiserImposes());
         Assert.Equal(reglages.SerialiserBannis(), relu.SerialiserBannis());
+    }
+
+    [Fact]
+    public void Le_seuil_d_etoiles_par_heros_se_serialise_se_copie_et_se_reinitialise_par_equipe()
+    {
+        var reglages = new ReglagesEquipes();
+        reglages.FixerEtoilesMiniHeros(PremiereEquipe, SeuilHeros);
+        reglages.FixerEtoilesMiniHeros(SecondeEquipe, SeuilHeros + 1);
+
+        var relu = ReglagesEquipes.Charger(null, null, reglages.SerialiserEtoilesMiniHeros());
+        var copie = reglages.Copier();
+        reglages.Reinitialiser(PremiereEquipe);
+
+        Assert.Equal(SeuilHeros, relu.EtoilesMiniHeros(PremiereEquipe));
+        Assert.Equal(SeuilHeros + 1, relu.EtoilesMiniHeros(SecondeEquipe));
+        Assert.Equal(SeuilHeros, copie.EtoilesMiniHeros(PremiereEquipe));
+        Assert.Equal(0, reglages.EtoilesMiniHeros(PremiereEquipe));
+        Assert.Equal(SeuilHeros + 1, reglages.Criteres(SecondeEquipe, _ => true).EtoilesMiniHeros);
+    }
+
+    [Fact]
+    public void Un_seuil_nul_retire_le_critere_de_l_equipe()
+    {
+        var reglages = new ReglagesEquipes();
+        reglages.FixerEtoilesMiniHeros(PremiereEquipe, SeuilHeros);
+
+        reglages.FixerEtoilesMiniHeros(PremiereEquipe, 0);
+
+        Assert.True(reglages.Criteres(PremiereEquipe, _ => true).EstVide);
+        Assert.Equal(string.Empty, reglages.SerialiserEtoilesMiniHeros());
+    }
+
+    [Fact]
+    public void Un_seuil_illisible_ou_hors_borne_est_ignore_ou_ramene_au_maximum()
+    {
+        var reglages = ReglagesEquipes.Charger(null, null, "x:3;0:abc;1:9999");
+
+        Assert.Equal(0, reglages.EtoilesMiniHeros(PremiereEquipe));
+        Assert.Equal(FormOptionsGeneration.EtoilesMinimumMax, reglages.EtoilesMiniHeros(SecondeEquipe));
     }
 
     [Fact]

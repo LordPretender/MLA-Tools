@@ -22,18 +22,25 @@ internal enum ModeGeneration
 
 internal sealed record EvaluationEquipe(int Dps, int Tanks, int TanksSecondaires, int Soutiens, int Etoiles, int PenaliteRoles, int Points, string Description, int Chaos = 0);
 
-/// <summary>Héros imposés et bannis d'une équipe ; contrainte dure, tenue avant tout score.</summary>
-internal sealed record CriteresEquipe(IReadOnlySet<int> Imposes, IReadOnlySet<int> Bannis)
+/// <summary>Héros imposés et bannis d'une équipe, et étoiles minimum de chaque héros (0 = aucun seuil) ; contrainte dure, tenue avant tout score.</summary>
+internal sealed record CriteresEquipe(IReadOnlySet<int> Imposes, IReadOnlySet<int> Bannis, int EtoilesMiniHeros = 0)
 {
     public static readonly CriteresEquipe Aucun = new(new HashSet<int>(), new HashSet<int>());
 
-    public bool EstVide => Imposes.Count == 0 && Bannis.Count == 0;
+    public bool EstVide => Imposes.Count == 0 && Bannis.Count == 0 && EtoilesMiniHeros == 0;
 
     public IEnumerable<int> ImposesManquants(IReadOnlyCollection<int> equipe) => Imposes.Where(id => !equipe.Contains(id));
 
     public IEnumerable<int> BannisPresents(IReadOnlyCollection<int> equipe) => Bannis.Where(equipe.Contains);
 
-    public int Ecarts(IReadOnlyCollection<int> equipe) => ImposesManquants(equipe).Count() + BannisPresents(equipe).Count();
+    // Comme pour le minimum de l'équipe, le manque se compte en étoiles : le recuit y trouve une pente à descendre.
+    public int EtoilesManquantes(IReadOnlyCollection<int> equipe, Func<int, int> etoilesDe) =>
+        equipe.Sum(id => Math.Max(0, EtoilesMiniHeros - etoilesDe(id)));
+
+    /// <param name="etoilesDe">Étoiles d'un héros ; inutile (nul) tant qu'aucun seuil par héros n'est réglé.</param>
+    public int Ecarts(IReadOnlyCollection<int> equipe, Func<int, int>? etoilesDe = null) =>
+        ImposesManquants(equipe).Count() + BannisPresents(equipe).Count()
+        + (EtoilesMiniHeros > 0 && etoilesDe is not null ? EtoilesManquantes(equipe, etoilesDe) : 0);
 }
 
 internal sealed record RepartitionEquipes(IReadOnlyList<IReadOnlyList<int>> Equipes, IReadOnlyList<int> Reserve);
@@ -123,6 +130,8 @@ internal sealed class MoteurEquipes
 
     public int FamilleDe(int heroId) => _infos[heroId].Famille;
 
+    public int EtoilesDe(int heroId) => _infos[heroId].Etoiles;
+
     public EvaluationEquipe Evaluer(IReadOnlyList<int> ids)
     {
         var cle = string.Join(',', ids.Order());
@@ -139,7 +148,7 @@ internal sealed class MoteurEquipes
     }
 
     // Un minimum d'étoiles par équipe (rang = index) ne vaut que pour « meilleure équipe d'abord » ; 0 ou une équipe hors liste = aucun minimum.
-    // Les critères (héros imposés ou bannis, même rang) valent pour les deux modes ; une équipe hors liste n'a aucun critère.
+    // Les critères (héros imposés ou bannis, étoiles minimum par héros, même rang) valent pour les deux modes ; une équipe hors liste n'a aucun critère.
     // La première variante est la répartition sans brassage ; les suivantes repartent d'un départ brassé, car la recherche gloutonne est déterministe
     // et ne donnerait sinon qu'une seule répartition. Le hasard est réinitialisé pour que deux appels identiques donnent la même liste.
     public IReadOnlyList<RepartitionEquipes> GenererVariantes(
@@ -426,8 +435,8 @@ internal sealed class MoteurEquipes
 
     // ---------- Optimisation par échanges (somme maximale, étoiles minimum) ----------
 
-    // Un héros imposé manquant ou banni présent coûte autant qu'un point d'étoiles manquant : plus que n'importe quelle perte de score.
-    private static FonctionCout CoutDuMode(PoidsEquipes poids, ModeGeneration mode, IReadOnlyList<int> etoilesMinimum, IReadOnlyList<CriteresEquipe> criteres)
+    // Un héros imposé manquant, un banni présent ou une étoile manquante sous le seuil d'un héros coûte autant qu'une étoile manquante à l'équipe : plus que n'importe quelle perte de score.
+    private FonctionCout CoutDuMode(PoidsEquipes poids, ModeGeneration mode, IReadOnlyList<int> etoilesMinimum, IReadOnlyList<CriteresEquipe> criteres)
     {
         Func<List<EvaluationEquipe>, double> coutDuScore = mode == ModeGeneration.SommeMaximale
             ? evaluations => Cout(evaluations, poids)
@@ -436,12 +445,12 @@ internal sealed class MoteurEquipes
     }
 
     // equipes peut porter la réserve en dernier : seules les nombreEquipes premières listes sont des équipes.
-    private static int EcartsDeCriteres(List<List<int>> equipes, int nombreEquipes, IReadOnlyList<CriteresEquipe> criteres)
+    private int EcartsDeCriteres(List<List<int>> equipes, int nombreEquipes, IReadOnlyList<CriteresEquipe> criteres)
     {
         var ecarts = 0;
         for (var i = 0; i < nombreEquipes && i < criteres.Count; i++)
         {
-            ecarts += criteres[i].Ecarts(equipes[i]);
+            ecarts += criteres[i].Ecarts(equipes[i], EtoilesDe);
         }
         return ecarts;
     }

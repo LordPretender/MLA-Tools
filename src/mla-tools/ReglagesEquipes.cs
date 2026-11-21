@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace MlaTools;
 
-/// <summary>Critères du Générateur réglés par équipe (rang = index) : héros imposés et bannis, avec les règles de cohérence qui les lient.</summary>
+/// <summary>Critères du Générateur réglés par équipe (rang = index) : héros imposés et bannis, étoiles minimum par héros, avec les règles de cohérence qui les lient.</summary>
 internal sealed class ReglagesEquipes
 {
     private const char SeparateurEquipes = ';';
@@ -11,8 +11,24 @@ internal sealed class ReglagesEquipes
 
     private readonly Dictionary<int, HashSet<int>> _imposes = [];
     private readonly Dictionary<int, HashSet<int>> _bannis = [];
+    private readonly Dictionary<int, int> _etoilesMiniHeros = [];
 
     public IReadOnlyCollection<int> Imposes(int equipe) => Lire(_imposes, equipe);
+
+    public int EtoilesMiniHeros(int equipe) => _etoilesMiniHeros.GetValueOrDefault(equipe);
+
+    /// <summary>0 retire le seuil.</summary>
+    public void FixerEtoilesMiniHeros(int equipe, int etoiles)
+    {
+        if (etoiles > 0)
+        {
+            _etoilesMiniHeros[equipe] = etoiles;
+        }
+        else
+        {
+            _etoilesMiniHeros.Remove(equipe);
+        }
+    }
 
     public IReadOnlyCollection<int> Bannis(int equipe) => Lire(_bannis, equipe);
 
@@ -46,11 +62,12 @@ internal sealed class ReglagesEquipes
     {
         _imposes.Remove(equipe);
         _bannis.Remove(equipe);
+        _etoilesMiniHeros.Remove(equipe);
     }
 
     /// <summary>Critères d'une équipe ; un héros qui n'existe plus (existe faux) est ignoré.</summary>
     public CriteresEquipe Criteres(int equipe, Func<int, bool> existe) =>
-        new(Lire(_imposes, equipe).Where(existe).ToHashSet(), Lire(_bannis, equipe).Where(existe).ToHashSet());
+        new(Lire(_imposes, equipe).Where(existe).ToHashSet(), Lire(_bannis, equipe).Where(existe).ToHashSet(), EtoilesMiniHeros(equipe));
 
     public IReadOnlyList<CriteresEquipe> Pour(int nombreEquipes, Func<int, bool> existe) =>
         [.. Enumerable.Range(0, nombreEquipes).Select(i => Criteres(i, existe))];
@@ -66,6 +83,10 @@ internal sealed class ReglagesEquipes
         {
             copie._bannis[equipe] = [.. ids];
         }
+        foreach (var (equipe, etoiles) in _etoilesMiniHeros)
+        {
+            copie._etoilesMiniHeros[equipe] = etoiles;
+        }
         return copie;
     }
 
@@ -73,8 +94,13 @@ internal sealed class ReglagesEquipes
 
     public string SerialiserBannis() => Serialiser(_bannis);
 
+    public string SerialiserEtoilesMiniHeros() =>
+        string.Join(SeparateurEquipes, _etoilesMiniHeros
+            .OrderBy(e => e.Key)
+            .Select(e => $"{e.Key.ToString(CultureInfo.InvariantCulture)}{SeparateurRangEtIds}{e.Value.ToString(CultureInfo.InvariantCulture)}"));
+
     /// <summary>Valeurs issues de la base : une partie illisible ou incohérente est ignorée, le reste est gardé.</summary>
-    public static ReglagesEquipes Charger(string? imposes, string? bannis)
+    public static ReglagesEquipes Charger(string? imposes, string? bannis, string? etoilesMiniHeros = null)
     {
         var reglages = new ReglagesEquipes();
         foreach (var (equipe, id) in Decoder(imposes))
@@ -84,6 +110,11 @@ internal sealed class ReglagesEquipes
         foreach (var (equipe, id) in Decoder(bannis))
         {
             reglages.Bannir(equipe, id);
+        }
+        // Même forme « rang:valeur » que les listes d'identifiants, avec une seule valeur par rang.
+        foreach (var (equipe, etoiles) in Decoder(etoilesMiniHeros))
+        {
+            reglages.FixerEtoilesMiniHeros(equipe, Math.Min(etoiles, FormOptionsGeneration.EtoilesMinimumMax));
         }
         return reglages;
     }

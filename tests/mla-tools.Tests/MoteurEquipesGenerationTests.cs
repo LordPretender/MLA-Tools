@@ -18,6 +18,9 @@ public class MoteurEquipesGenerationTests
     private const int HeroFaible = 6;
     private const int HeroFortA = 1;
     private const int HeroFortB = 5;
+    private const int SeuilHeros = 4;
+    private const int SeuilIntenable = 5;
+    private const int MinimumEquipeCumule = 22;
 
     // Le mode passe par son nom : ModeGeneration est internal, un paramètre de test public ne peut pas en porter le type.
     public static IEnumerable<object[]> Modes => Enum.GetNames<ModeGeneration>().Select(nom => new object[] { nom });
@@ -49,8 +52,8 @@ public class MoteurEquipesGenerationTests
         IReadOnlyList<CriteresEquipe>? criteres = null) =>
         moteur.GenererVariantes(nombreEquipes, Poids, mode, etoilesMinimum ?? SansMinimum, nombreVariantes, criteres);
 
-    private static CriteresEquipe Criteres(int[]? imposes = null, int[]? bannis = null) =>
-        new((imposes ?? []).ToHashSet(), (bannis ?? []).ToHashSet());
+    private static CriteresEquipe Criteres(int[]? imposes = null, int[]? bannis = null, int etoilesMiniHeros = 0) =>
+        new((imposes ?? []).ToHashSet(), (bannis ?? []).ToHashSet(), etoilesMiniHeros);
 
     // Douze héros variés : trois rôles, deux équipements, des factions qui se recoupent, des étoiles de 1 à 5.
     private static HeroMoteur[] JeuVarie() =>
@@ -384,5 +387,68 @@ public class MoteurEquipesGenerationTests
 
         Assert.Equal(2, criteres.Ecarts([1, 3, 9]));
         Assert.Equal(0, criteres.Ecarts([1, 2, 9]));
+    }
+
+    [Fact]
+    public void Les_ecarts_comptent_les_etoiles_manquantes_sous_le_seuil_par_heros()
+    {
+        var criteres = Criteres(etoilesMiniHeros: SeuilHeros);
+
+        // Étoiles = identifiant : 1 et 2 manquent de 3 et 2 étoiles, 5 est au-dessus du seuil.
+        Assert.Equal(5, criteres.Ecarts([1, 2, 5], id => id));
+        Assert.Equal(0, criteres.Ecarts([1, 2, 5]));
+    }
+
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Aucun_heros_de_l_equipe_n_est_sous_le_seuil_d_etoiles(string nomMode)
+    {
+        var moteur = Moteur(JeuVarie());
+
+        var variantes = Variantes(moteur, 2, Enum.Parse<ModeGeneration>(nomMode), criteres: [Criteres(etoilesMiniHeros: SeuilHeros), CriteresEquipe.Aucun]);
+
+        Assert.All(variantes, v => Assert.All(v.Equipes[0], id => Assert.True(moteur.EtoilesDe(id) >= SeuilHeros)));
+    }
+
+    // Seuil par héros (4) et minimum d'équipe (22) ne sont tenables ensemble que par les cinq héros à 4 étoiles ou plus du jeu (total 23).
+    [Fact]
+    public void Le_seuil_par_heros_se_cumule_avec_le_minimum_de_l_equipe()
+    {
+        var moteur = Moteur(JeuVarie());
+
+        var variantes = Variantes(
+            moteur, 2, ModeGeneration.MeilleureEquipeDAbord, etoilesMinimum: [MinimumEquipeCumule], criteres: [Criteres(etoilesMiniHeros: SeuilHeros), CriteresEquipe.Aucun]);
+
+        Assert.All(variantes, v =>
+        {
+            Assert.All(v.Equipes[0], id => Assert.True(moteur.EtoilesDe(id) >= SeuilHeros));
+            Assert.True(moteur.Evaluer(v.Equipes[0]).Etoiles >= MinimumEquipeCumule);
+        });
+    }
+
+    // Le jeu n'a que trois héros à 5 étoiles : deux équipes ne peuvent pas toutes deux n'avoir que des héros à 5 étoiles.
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Un_seuil_par_heros_intenable_remonte_un_deficit_sans_bloquer(string nomMode)
+    {
+        var moteur = Moteur(JeuVarie());
+        var criteres = new[] { Criteres(etoilesMiniHeros: SeuilIntenable), Criteres(etoilesMiniHeros: SeuilIntenable) };
+
+        var variantes = Variantes(moteur, 2, Enum.Parse<ModeGeneration>(nomMode), criteres: criteres);
+
+        Assert.NotEmpty(variantes);
+        Assert.All(variantes, v => Assert.Contains(Enumerable.Range(0, 2), rang => criteres[rang].Ecarts(v.Equipes[rang], moteur.EtoilesDe) > 0));
+    }
+
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Un_seuil_par_heros_nul_laisse_la_generation_inchangee(string nomMode)
+    {
+        var mode = Enum.Parse<ModeGeneration>(nomMode);
+        var moteur = Moteur(JeuVarie());
+
+        Assert.Equal(
+            Empreinte(Variantes(moteur, 2, mode)),
+            Empreinte(Variantes(moteur, 2, mode, criteres: [Criteres(etoilesMiniHeros: 0), Criteres(etoilesMiniHeros: 0)])));
     }
 }

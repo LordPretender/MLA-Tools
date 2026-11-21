@@ -34,6 +34,7 @@ internal sealed class FormEquipes : FormBase
     private const char SeparateurMinimums = ',';
     private const string CleHerosImposes = "heros_imposes";
     private const string CleHerosBannis = "heros_bannis";
+    private const string CleEtoilesMiniHeros = "etoiles_mini_heros";
     private const string CleVariantes = "variantes";
     private const int VariantesParDefaut = 5;
     private const int VariantesMax = 20;
@@ -172,7 +173,7 @@ internal sealed class FormEquipes : FormBase
             MenuEquipe = _menuEquipe,
             SurClic = Cliquer,
             EstSousMinimum = EstSousMinimum,
-            CriteresNonTenus = (ids, rang) => _reglages.Criteres(rang, _parId.ContainsKey).Ecarts(ids) > 0,
+            CriteresNonTenus = (ids, rang) => _reglages.Criteres(rang, _parId.ContainsKey).Ecarts(ids, EtoilesDe) > 0,
             SurReglage = ReglerEquipe,
         };
         Font = _police;
@@ -521,7 +522,7 @@ internal sealed class FormEquipes : FormBase
             ? ModeGeneration.SommeMaximale
             : ModeGeneration.MeilleureEquipeDAbord;
         _etoilesMinimum = LireMinimums(parametres);
-        _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis));
+        _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis), parametres.GetValueOrDefault(CleEtoilesMiniHeros));
         AfficherMode();
     }
 
@@ -730,6 +731,8 @@ internal sealed class FormEquipes : FormBase
 
     private IReadOnlyList<CriteresEquipe> Criteres(int nombreEquipes) => _reglages.Pour(nombreEquipes, _parId.ContainsKey);
 
+    private int EtoilesDe(int id) => _parId[id].Hero.Etoiles;
+
     // Les listes se reconstruisent depuis la base : une classe ou une faction n'existe que si un héros la porte.
     private void ActualiserFiltres()
     {
@@ -934,7 +937,7 @@ internal sealed class FormEquipes : FormBase
     {
         var evaluations = _variantes[index].Equipes.Select(e => _moteur.Evaluer(e)).ToList();
         var criteres = Criteres(evaluations.Count);
-        var alerte = evaluations.Select((e, rang) => e.PenaliteRoles > 0 || EstSousMinimum(e, rang) || criteres[rang].Ecarts(_variantes[index].Equipes[rang]) > 0).Any(a => a);
+        var alerte = evaluations.Select((e, rang) => e.PenaliteRoles > 0 || EstSousMinimum(e, rang) || criteres[rang].Ecarts(_variantes[index].Equipes[rang], EtoilesDe) > 0).Any(a => a);
         return $"{index + 1} · {string.Join(SeparateurPoints, evaluations.Select(e => e.Etoiles))}{(alerte ? SigneAlerte : string.Empty)}";
     }
 
@@ -991,6 +994,7 @@ internal sealed class FormEquipes : FormBase
         BaseSqlite.EcrireParametre(CleEtoilesMinimum, string.Join(SeparateurMinimums, _etoilesMinimum), _chemin);
         BaseSqlite.EcrireParametre(CleHerosImposes, _reglages.SerialiserImposes(), _chemin);
         BaseSqlite.EcrireParametre(CleHerosBannis, _reglages.SerialiserBannis(), _chemin);
+        BaseSqlite.EcrireParametre(CleEtoilesMiniHeros, _reglages.SerialiserEtoilesMiniHeros(), _chemin);
         BaseSqlite.EcrireParametre(CleListeVariantes, SerialiserVariantes(_variantes), _chemin);
     }
 
