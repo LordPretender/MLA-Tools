@@ -118,7 +118,7 @@ internal sealed class FormReglageEquipe : FormDialogue
         table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         table.Controls.Add(new Label { Text = "Factions imposées (au moins un héros)", AutoSize = true }, 0, 0);
-        table.Controls.Add(new Label { Text = "Factions bannies (aucun héros)", AutoSize = true }, 1, 0);
+        table.Controls.Add(new Label { Text = "Factions bannies (héros dont toutes les factions le sont)", AutoSize = true }, 1, 0);
         table.Controls.Add(_factionsImposees, 0, 1);
         table.Controls.Add(_factionsBannies, 1, 1);
         _factionsImposees.ItemCheck += (_, e) => BasculerFaction(_factionsImposees, e, Reglages.ImposerFaction, Reglages.RetirerFactionImposee, MessageFactionBannie);

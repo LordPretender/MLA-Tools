@@ -477,13 +477,15 @@ public class MoteurEquipesGenerationTests
 
     [Theory]
     [MemberData(nameof(Modes))]
-    public void Aucun_heros_de_l_equipe_ne_porte_une_faction_bannie(string nomMode)
+    public void Aucun_heros_de_l_equipe_n_a_toutes_ses_factions_bannies(string nomMode)
     {
         var moteur = Moteur(JeuVarie());
+        string[] bannies = [FactionX, FactionY];
 
-        var variantes = Variantes(moteur, 2, Enum.Parse<ModeGeneration>(nomMode), criteres: [Criteres(factionsBannies: [FactionZ]), CriteresEquipe.Aucun]);
+        var variantes = Variantes(moteur, 2, Enum.Parse<ModeGeneration>(nomMode), criteres: [Criteres(factionsBannies: bannies), CriteresEquipe.Aucun]);
 
-        Assert.All(variantes, v => Assert.All(v.Equipes[0], id => Assert.DoesNotContain(FactionZ, moteur.FactionsDe(id))));
+        // Le héros 4 porte X et Y, toutes deux bannies : il est exclu comme les héros mono-faction X ou Y.
+        Assert.All(variantes, v => Assert.All(v.Equipes[0], id => Assert.Contains(moteur.FactionsDe(id), faction => !bannies.Contains(faction))));
     }
 
     [Fact]
@@ -494,8 +496,9 @@ public class MoteurEquipesGenerationTests
 
         // Équipe 1 et 2 : FactionY imposée manque (1) et le héros 2 porte une faction bannie (1).
         Assert.Equal(2, criteres.Ecarts([1, 2], factionsDe: FactionsDeLHero));
-        // Le héros 3 porte deux factions bannies mais ne compte qu'une fois.
+        // Le héros 3 (X et Z) ne compte qu'une fois quand toutes ses factions sont bannies, et pas du tout s'il lui en reste une autorisée.
         Assert.Equal(1, Criteres(factionsBannies: [FactionX, FactionZ]).Ecarts([3], factionsDe: FactionsDeLHero));
+        Assert.Equal(0, Criteres(factionsBannies: [FactionZ]).Ecarts([3], factionsDe: FactionsDeLHero));
         Assert.Equal(0, criteres.Ecarts([1, 2], factionsDe: null));
     }
 
@@ -524,7 +527,8 @@ public class MoteurEquipesGenerationTests
 
         Assert.NotNull(moteur.RaisonInactive(Criteres(imposes: [HeroFortA], bannis: [HeroFortA])));
         Assert.NotNull(moteur.RaisonInactive(Criteres(imposes: [HeroFaible], etoilesMiniHeros: SeuilHeros)));
-        Assert.NotNull(moteur.RaisonInactive(Criteres(factionsImposees: [FactionX], factionsBannies: [FactionX])));
+        // Le héros 4 porte X et Y : bannir seulement X laisse Y, il reste admis et porte la faction imposée X. L'imposition devient impossible quand Y est bannie aussi.
+        Assert.NotNull(moteur.RaisonInactive(Criteres(factionsImposees: [FactionX], factionsBannies: [FactionX, FactionY])));
         Assert.Null(moteur.RaisonInactive(Criteres(imposes: [HeroFortA], factionsImposees: [FactionX])));
     }
 
@@ -566,10 +570,13 @@ public class MoteurEquipesGenerationTests
     public void Interdit_couvre_le_banni_la_faction_bannie_et_le_seuil_d_etoiles()
     {
         var criteres = Criteres(bannis: [1], etoilesMiniHeros: SeuilHeros, factionsBannies: [FactionZ]);
-        IReadOnlyList<string> FactionsDeLHero(int id) => id == 3 ? [FactionZ] : [FactionX];
+        IReadOnlyList<string> FactionsDeLHero(int id) => id switch { 3 => [FactionZ], 4 => [FactionX, FactionZ], 5 => [], _ => [FactionX] };
 
         Assert.True(criteres.Interdit(1, _ => SeuilHeros, FactionsDeLHero));
         Assert.True(criteres.Interdit(3, _ => SeuilHeros, FactionsDeLHero));
+        // Une faction autorisée suffit, et un héros sans faction n'est pas exclu par « toutes bannies ».
+        Assert.False(criteres.Interdit(4, _ => SeuilHeros, FactionsDeLHero));
+        Assert.False(criteres.Interdit(5, _ => SeuilHeros, FactionsDeLHero));
         Assert.True(criteres.Interdit(2, _ => SeuilHeros - 1, FactionsDeLHero));
         Assert.False(criteres.Interdit(2, _ => SeuilHeros, FactionsDeLHero));
     }

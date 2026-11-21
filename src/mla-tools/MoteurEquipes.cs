@@ -31,7 +31,7 @@ internal sealed record CriteresEquipe(IReadOnlySet<int> Imposes, IReadOnlySet<in
     /// <summary>Chaque faction imposée doit être portée par au moins un héros de l'équipe.</summary>
     public IReadOnlySet<string> FactionsImposees { get; init; } = new HashSet<string>();
 
-    /// <summary>Aucun héros de l'équipe ne doit porter une de ces factions.</summary>
+    /// <summary>Un héros dont toutes les factions sont bannies n'entre pas dans l'équipe ; un héros qui garde une faction autorisée reste admis.</summary>
     public IReadOnlySet<string> FactionsBannies { get; init; } = new HashSet<string>();
 
     public bool EstVide => Imposes.Count == 0 && Bannis.Count == 0 && EtoilesMiniHeros == 0 && FactionsImposees.Count == 0 && FactionsBannies.Count == 0;
@@ -39,13 +39,16 @@ internal sealed record CriteresEquipe(IReadOnlySet<int> Imposes, IReadOnlySet<in
     public int FactionsManquantes(IReadOnlyCollection<int> equipe, Func<int, IReadOnlyList<string>> factionsDe) =>
         FactionsImposees.Count(faction => !equipe.Any(id => factionsDe(id).Contains(faction)));
 
-    // Un héros compte une fois, même s'il porte plusieurs factions bannies.
-    public int HerosDeFactionBannie(IReadOnlyCollection<int> equipe, Func<int, IReadOnlyList<string>> factionsDe) =>
-        equipe.Count(id => factionsDe(id).Any(FactionsBannies.Contains));
+    // Un héros sans faction n'est jamais exclu : « toutes bannies » serait vrai à vide.
+    private bool FactionsToutesBannies(IReadOnlyList<string> factions) =>
+        factions.Count > 0 && factions.All(FactionsBannies.Contains);
 
-    /// <summary>Un héros interdit n'entre jamais dans l'équipe : banni, d'une faction bannie, ou sous le seuil d'étoiles par héros.</summary>
+    public int HerosDeFactionBannie(IReadOnlyCollection<int> equipe, Func<int, IReadOnlyList<string>> factionsDe) =>
+        equipe.Count(id => FactionsToutesBannies(factionsDe(id)));
+
+    /// <summary>Un héros interdit n'entre jamais dans l'équipe : banni, de factions toutes bannies, ou sous le seuil d'étoiles par héros.</summary>
     public bool Interdit(int id, Func<int, int> etoilesDe, Func<int, IReadOnlyList<string>> factionsDe) =>
-        Bannis.Contains(id) || factionsDe(id).Any(FactionsBannies.Contains) || (EtoilesMiniHeros > 0 && etoilesDe(id) < EtoilesMiniHeros);
+        Bannis.Contains(id) || FactionsToutesBannies(factionsDe(id)) || (EtoilesMiniHeros > 0 && etoilesDe(id) < EtoilesMiniHeros);
 
     public IEnumerable<int> ImposesManquants(IReadOnlyCollection<int> equipe) => Imposes.Where(id => !equipe.Contains(id));
 
@@ -81,7 +84,7 @@ internal sealed class MoteurEquipes
 
     private const string DescriptionSansResonance = "Aucune résonance";
     private const string RaisonHerosImposeIntrouvable = "un héros imposé est introuvable";
-    private const string RaisonHerosImposeInterdit = "un héros imposé est interdit dans cette équipe (banni, faction bannie ou étoiles insuffisantes)";
+    private const string RaisonHerosImposeInterdit = "un héros imposé est interdit dans cette équipe (banni, factions toutes bannies ou étoiles insuffisantes)";
     private const string RaisonFactionImposeeIntrouvable = "aucun héros autorisé ne porte la faction imposée {0}";
     private const string FactionOrdre = Referentiel.FactionOrdre;
     private const string FactionChaos = Referentiel.FactionChaos;
