@@ -70,6 +70,28 @@ public class ReglagesEquipesTests
     }
 
     [Fact]
+    public void Resume_decrit_les_criteres_actifs_d_une_equipe_et_est_vide_sans_critere()
+    {
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = SeuilGlobal };
+        Assert.False(reglages.ADesReglages);
+        Assert.Empty(reglages.Resume(PremiereEquipe));
+
+        reglages.Imposer(PremiereEquipe, Heros);
+        reglages.Imposer(PremiereEquipe, Heros + 1);
+        reglages.Bannir(PremiereEquipe, Heros + 2);
+        reglages.BannirFaction(PremiereEquipe, FactionB);
+        reglages.FixerEtoilesMiniHeros(PremiereEquipe, SeuilHeros);
+
+        Assert.True(reglages.ADesReglages);
+        Assert.Equal(["2 héros imposés", "1 héros banni", "1 faction bannie", $"héros ≥ {SeuilHeros} étoiles"], reglages.Resume(PremiereEquipe));
+        Assert.Empty(reglages.Resume(SecondeEquipe));
+
+        reglages.ReinitialiserToutes();
+
+        Assert.False(reglages.ADesReglages);
+    }
+
+    [Fact]
     public void La_reinitialisation_ne_touche_que_son_equipe()
     {
         var reglages = new ReglagesEquipes();

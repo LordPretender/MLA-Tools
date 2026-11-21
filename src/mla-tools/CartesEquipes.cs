@@ -29,6 +29,8 @@ internal sealed class CartesEquipes(Font police, Font gras) : IDisposable
     internal static readonly Color TexteVert = Color.FromArgb(24, 128, 56);
     private static readonly Color FondRouge = Color.FromArgb(252, 232, 230);
     private static readonly Color TexteRouge = Color.FromArgb(197, 34, 31);
+    // Bleu, pour ne pas se confondre avec le vert « conforme » et le rouge « écart » des cartes.
+    private static readonly Color FondReglageActif = Color.FromArgb(206, 226, 247);
     internal static readonly Color FondNeutre = Color.FromArgb(238, 238, 238);
 
     private readonly InfobulleHero _infobulle = new(police, gras);
@@ -58,6 +60,9 @@ internal sealed class CartesEquipes(Font police, Font gras) : IDisposable
 
     /// <summary>Indique qu'une équipe (ses héros, son rang) ne tient pas ses héros imposés ou bannis ; nul quand aucun critère ne s'applique.</summary>
     public Func<IReadOnlyList<int>, int, bool>? CriteresNonTenus { get; set; }
+
+    /// <summary>Résumé des critères actifs d'une équipe (son rang) ; nul quand elle n'en a aucun ou qu'aucun critère ne s'applique.</summary>
+    public Func<int, string?>? ResumeReglages { get; set; }
 
     /// <summary>Motif pour lequel une équipe (son rang) n'a pas été générée ; nul quand elle l'est ou qu'aucun critère ne s'applique.</summary>
     public Func<int, string?>? RaisonInactive { get; set; }
@@ -153,7 +158,7 @@ internal sealed class CartesEquipes(Font police, Font gras) : IDisposable
         var evaluation = Moteur.Evaluer(ids);
         var carte = NouvelleCarte();
         var sousMinimum = (EstSousMinimum?.Invoke(evaluation, index) ?? false) || (CriteresNonTenus?.Invoke(ids, index) ?? false);
-        var reglage = SurReglage is null ? null : BoutonReglage(() => SurReglage(index));
+        var reglage = SurReglage is null ? null : BoutonReglage(() => SurReglage(index), ResumeReglages?.Invoke(index));
         AjouterLigne(carte, EnTete($"Équipe {index + 1}", $"{evaluation.Etoiles} points d'étoiles", sousMinimum ? TexteRouge : null, reglage), HauteurEnTete);
         if (RaisonInactive?.Invoke(index) is { } raison)
         {
@@ -247,12 +252,16 @@ internal sealed class CartesEquipes(Font police, Font gras) : IDisposable
         return carte;
     }
 
-    private static Button BoutonReglage(Action surClic)
+    private static Button BoutonReglage(Action surClic, string? resume)
     {
         var bouton = new Button { Text = LibelleReglage, Width = LargeurBoutonReglage, Dock = DockStyle.Fill, Margin = new Padding(4, 2, 0, 2) };
         OutilsDialogue.StyliserBouton(bouton);
+        if (resume is not null)
+        {
+            bouton.BackColor = FondReglageActif;
+        }
         var infobulle = new ToolTip();
-        infobulle.SetToolTip(bouton, InfobulleReglage);
+        infobulle.SetToolTip(bouton, resume is null ? InfobulleReglage : $"{InfobulleReglage} : {resume}");
         bouton.Disposed += (_, _) => infobulle.Dispose();
         bouton.Click += (_, _) => surClic();
         return bouton;

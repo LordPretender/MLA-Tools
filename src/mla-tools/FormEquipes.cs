@@ -7,6 +7,7 @@ namespace MlaTools;
 /// <summary>Fenêtre principale : héros et équipes de la base ; la capture et la lecture OCR s'ouvrent depuis le menu Fichier.</summary>
 internal sealed class FormEquipes : FormBase
 {
+    private const int DureeAvisMs = 4000;
     private const string ColNom = "Nom";
     private const string ColEtoiles = "Etoiles";
     private const string ColClasse = "Classe";
@@ -93,6 +94,9 @@ internal sealed class FormEquipes : FormBase
     private readonly Label _libelleMode = new() { Text = "Mode", AutoSize = true, Margin = new Padding(16, 6, 6, 0) };
     private readonly ComboBox _choixMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 230 };
 
+    private readonly Label _avisReinitialisation = new() { Text = "Réglages des équipes réinitialisés", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(16, 8, 3, 0), Visible = false };
+    private readonly System.Windows.Forms.Timer _delaiAvis = new() { Interval = DureeAvisMs };
+
     private readonly ToolStripMenuItem _menuModifier = new("Modifier…") { ShortcutKeys = Keys.F2 };
 
     private readonly ToolStripMenuItem _menuSupprimer = new("Supprimer") { ShortcutKeyDisplayString = "Suppr" };
@@ -163,6 +167,9 @@ internal sealed class FormEquipes : FormBase
     // Évite qu'un changement de mode venu des options soit réécrit en base par la liste de l'onglet Équipes.
     private bool _modeEnMiseAJour;
 
+    // Poser le nombre d'équipes lu en base déclencherait sinon la réinitialisation des réglages, puis leur écriture avant même qu'ils soient chargés.
+    private bool _parametresEnChargement;
+
     // Remplir la liste des variantes déclencherait sinon un changement de variante, donc un réaffichage et une écriture en base.
     private bool _variantesEnMiseAJour;
 
@@ -180,6 +187,12 @@ internal sealed class FormEquipes : FormBase
             RaisonInactive = rang => _moteur.RaisonInactive(_reglages.Criteres(rang, _parId.ContainsKey)),
             CriteresNonTenus = (ids, rang) => _reglages.Criteres(rang, _parId.ContainsKey).Ecarts(ids, EtoilesDe, FactionsDe) > 0,
             SurReglage = ReglerEquipe,
+            ResumeReglages = ResumeReglages,
+        };
+        _delaiAvis.Tick += (_, _) =>
+        {
+            _delaiAvis.Stop();
+            _avisReinitialisation.Visible = false;
         };
         Font = _police;
         Text = TitreApplication;
@@ -222,6 +235,7 @@ internal sealed class FormEquipes : FormBase
             _cartes.Dispose();
             _menuHeros.Dispose();
             _menuEquipe.Dispose();
+            _delaiAvis.Dispose();
         }
     }
 
@@ -373,6 +387,10 @@ internal sealed class FormEquipes : FormBase
         enregistrer.Click += (_, _) => EnregistrerComposition();
         _nombreEquipes.ValueChanged += (_, _) =>
         {
+            if (!_parametresEnChargement)
+            {
+                ReinitialiserEtSauvegarder();
+            }
             AfficherChoixMode();
             AfficherCartes();
         };
@@ -390,6 +408,7 @@ internal sealed class FormEquipes : FormBase
         AfficherChoixMode();
         barre.Controls.Add(generer);
         barre.Controls.Add(enregistrer);
+        barre.Controls.Add(_avisReinitialisation);
 
         _zoneCartes.Resize += (_, _) =>
         {
@@ -519,7 +538,9 @@ internal sealed class FormEquipes : FormBase
     // Les réglages viennent de la base : une valeur illisible ou hors bornes garde le réglage courant.
     private void AppliquerParametres(IReadOnlyDictionary<string, string> parametres)
     {
+        _parametresEnChargement = true;
         _nombreEquipes.Value = Math.Clamp(Lire(parametres, CleNombreEquipes, _nombreEquipes.Value), _nombreEquipes.Minimum, _nombreEquipes.Maximum);
+        _parametresEnChargement = false;
         _nombreEquipesPersiste = (int)_nombreEquipes.Value;
         _nombreVariantes.Value = Math.Clamp(Lire(parametres, CleVariantes, _nombreVariantes.Value), _nombreVariantes.Minimum, _nombreVariantes.Maximum);
         _poids = new PoidsEquipes(
@@ -692,11 +713,57 @@ internal sealed class FormEquipes : FormBase
 
         var ancien = _mode;
         _mode = (ModeGeneration)_choixMode.SelectedIndex;
-        if (!Proteger(SauvegarderParametres))
+        if (!ReinitialiserEtSauvegarder())
         {
             _mode = ancien;
         }
         AfficherMode();
+        AfficherCartes();
+    }
+
+    // Retourne vrai quand des réglages existaient : sans eux, le vidage est invisible et n'a pas à être annoncé.
+    private bool ReinitialiserReglages()
+    {
+        var existaient = _reglages.ADesReglages || _etoilesMinimum.Any(minimum => minimum > 0);
+        _reglages.ReinitialiserToutes();
+        _etoilesMinimum.Clear();
+        return existaient;
+    }
+
+    private void AnnoncerReinitialisation()
+    {
+        _avisReinitialisation.Visible = true;
+        _delaiAvis.Stop();
+        _delaiAvis.Start();
+    }
+
+    private string? ResumeReglages(int equipe)
+    {
+        var criteres = _reglages.Resume(equipe).ToList();
+        if (ModeEffectif == ModeGeneration.MeilleureEquipeDAbord && Minimum(equipe) > 0)
+        {
+            criteres.Add($"équipe ≥ {Minimum(equipe)} étoiles");
+        }
+        return criteres.Count > 0 ? string.Join(", ", criteres) : null;
+    }
+
+    // Changer le nombre d'équipes ou le mode démarre une nouvelle composition : les réglages de chaque équipe repartent de zéro.
+    private bool ReinitialiserEtSauvegarder()
+    {
+        var anciensReglages = _reglages.Copier();
+        var anciensMinimums = _etoilesMinimum.ToList();
+        var existaient = ReinitialiserReglages();
+        if (Proteger(SauvegarderParametres))
+        {
+            if (existaient)
+            {
+                AnnoncerReinitialisation();
+            }
+            return true;
+        }
+        _reglages = anciensReglages;
+        _etoilesMinimum = anciensMinimums;
+        return false;
     }
 
     private void AfficherMode()
@@ -718,7 +785,7 @@ internal sealed class FormEquipes : FormBase
 
     private int Minimum(int equipe) => equipe < _etoilesMinimum.Count ? _etoilesMinimum[equipe] : 0;
 
-    // Minimums et critères vivent dans _etoilesMinimum et _reglages : rien ne se perd quand le nombre d'équipes change, ni pour une carte vide.
+    // Minimums et critères vivent dans _etoilesMinimum et _reglages, indépendamment des cartes affichées (une carte vide garde les siens).
     private void ReglerEquipe(int equipe)
     {
         int? minimum = ModeEffectif == ModeGeneration.MeilleureEquipeDAbord ? Minimum(equipe) : null;
@@ -866,11 +933,11 @@ internal sealed class FormEquipes : FormBase
         var modifie = dialogue.Poids != _poids || dialogue.EtoilesMiniHeros != _reglages.EtoilesMiniHerosGlobal;
         _poids = dialogue.Poids;
         _reglages.EtoilesMiniHerosGlobal = dialogue.EtoilesMiniHeros;
+        var existaient = false;
         if (modifie)
         {
             // Changer les options démarre une nouvelle composition : les réglages de chaque équipe repartent de zéro.
-            _reglages.ReinitialiserToutes();
-            _etoilesMinimum.Clear();
+            existaient = ReinitialiserReglages();
         }
         if (!Proteger(SauvegarderParametres))
         {
@@ -878,6 +945,10 @@ internal sealed class FormEquipes : FormBase
             _reglages = anciensReglages;
             _etoilesMinimum = anciensMinimums;
             return;
+        }
+        if (existaient)
+        {
+            AnnoncerReinitialisation();
         }
         // Le seuil global et la réinitialisation changent ce que les cartes signalent comme non tenu.
         AfficherCartes();

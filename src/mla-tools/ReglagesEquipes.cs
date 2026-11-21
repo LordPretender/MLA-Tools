@@ -116,6 +116,34 @@ internal sealed class ReglagesEquipes
         _factionsBannies.Clear();
     }
 
+    /// <summary>Vrai dès qu'une équipe a au moins un critère ; le seuil global n'en est pas un.</summary>
+    public bool ADesReglages =>
+        _imposes.Values.Any(e => e.Count > 0) || _bannis.Values.Any(e => e.Count > 0) || _etoilesMiniHeros.Count > 0
+        || _factionsImposees.Values.Any(e => e.Count > 0) || _factionsBannies.Values.Any(e => e.Count > 0);
+
+    /// <summary>Libellés des critères actifs d'une équipe, vide quand elle n'en a aucun.</summary>
+    public IReadOnlyList<string> Resume(int equipe)
+    {
+        var resume = new List<string>();
+        AjouterCompte(resume, Lire(_imposes, equipe).Count, "héros imposé", "héros imposés");
+        AjouterCompte(resume, Lire(_bannis, equipe).Count, "héros banni", "héros bannis");
+        AjouterCompte(resume, Lire(_factionsImposees, equipe).Count, "faction imposée", "factions imposées");
+        AjouterCompte(resume, Lire(_factionsBannies, equipe).Count, "faction bannie", "factions bannies");
+        if (EtoilesMiniHeros(equipe) > 0)
+        {
+            resume.Add($"héros ≥ {EtoilesMiniHeros(equipe)} étoiles");
+        }
+        return resume;
+    }
+
+    private static void AjouterCompte(List<string> resume, int nombre, string singulier, string pluriel)
+    {
+        if (nombre > 0)
+        {
+            resume.Add($"{nombre} {(nombre > 1 ? pluriel : singulier)}");
+        }
+    }
+
     /// <summary>Critères d'une équipe ; un héros qui n'existe plus (existe faux) est ignoré.</summary>
     public CriteresEquipe Criteres(int equipe, Func<int, bool> existe) =>
         new(Lire(_imposes, equipe).Where(existe).ToHashSet(), Lire(_bannis, equipe).Where(existe).ToHashSet(), EtoilesMiniHerosEffectif(equipe))
