@@ -13,9 +13,16 @@ internal sealed class ReglagesEquipes
     private readonly Dictionary<int, HashSet<int>> _bannis = [];
     private readonly Dictionary<int, int> _etoilesMiniHeros = [];
 
+    /// <summary>Seuil d'étoiles par héros valable pour toutes les équipes ; 0 = aucun. Hors <see cref="Reinitialiser"/> : il n'appartient à aucune équipe.</summary>
+    public int EtoilesMiniHerosGlobal { get; set; }
+
     public IReadOnlyCollection<int> Imposes(int equipe) => Lire(_imposes, equipe);
 
+    /// <summary>Seuil propre à l'équipe, sans le seuil global.</summary>
     public int EtoilesMiniHeros(int equipe) => _etoilesMiniHeros.GetValueOrDefault(equipe);
+
+    // Le plus élevé des deux : une équipe peut durcir le seuil global, jamais l'assouplir.
+    private int EtoilesMiniHerosEffectif(int equipe) => Math.Max(EtoilesMiniHerosGlobal, EtoilesMiniHeros(equipe));
 
     /// <summary>0 retire le seuil.</summary>
     public void FixerEtoilesMiniHeros(int equipe, int etoiles)
@@ -67,14 +74,14 @@ internal sealed class ReglagesEquipes
 
     /// <summary>Critères d'une équipe ; un héros qui n'existe plus (existe faux) est ignoré.</summary>
     public CriteresEquipe Criteres(int equipe, Func<int, bool> existe) =>
-        new(Lire(_imposes, equipe).Where(existe).ToHashSet(), Lire(_bannis, equipe).Where(existe).ToHashSet(), EtoilesMiniHeros(equipe));
+        new(Lire(_imposes, equipe).Where(existe).ToHashSet(), Lire(_bannis, equipe).Where(existe).ToHashSet(), EtoilesMiniHerosEffectif(equipe));
 
     public IReadOnlyList<CriteresEquipe> Pour(int nombreEquipes, Func<int, bool> existe) =>
         [.. Enumerable.Range(0, nombreEquipes).Select(i => Criteres(i, existe))];
 
     public ReglagesEquipes Copier()
     {
-        var copie = new ReglagesEquipes();
+        var copie = new ReglagesEquipes { EtoilesMiniHerosGlobal = EtoilesMiniHerosGlobal };
         foreach (var (equipe, ids) in _imposes)
         {
             copie._imposes[equipe] = [.. ids];
@@ -100,9 +107,9 @@ internal sealed class ReglagesEquipes
             .Select(e => $"{e.Key.ToString(CultureInfo.InvariantCulture)}{SeparateurRangEtIds}{e.Value.ToString(CultureInfo.InvariantCulture)}"));
 
     /// <summary>Valeurs issues de la base : une partie illisible ou incohérente est ignorée, le reste est gardé.</summary>
-    public static ReglagesEquipes Charger(string? imposes, string? bannis, string? etoilesMiniHeros = null)
+    public static ReglagesEquipes Charger(string? imposes, string? bannis, string? etoilesMiniHeros = null, int etoilesMiniHerosGlobal = 0)
     {
-        var reglages = new ReglagesEquipes();
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = Math.Clamp(etoilesMiniHerosGlobal, 0, FormOptionsGeneration.EtoilesMinimumMax) };
         foreach (var (equipe, id) in Decoder(imposes))
         {
             reglages.Imposer(equipe, id);

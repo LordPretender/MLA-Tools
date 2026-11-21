@@ -35,6 +35,7 @@ internal sealed class FormEquipes : FormBase
     private const string CleHerosImposes = "heros_imposes";
     private const string CleHerosBannis = "heros_bannis";
     private const string CleEtoilesMiniHeros = "etoiles_mini_heros";
+    private const string CleEtoilesMiniHerosGlobal = "etoiles_mini_heros_global";
     private const string CleVariantes = "variantes";
     private const int VariantesParDefaut = 5;
     private const int VariantesMax = 20;
@@ -522,7 +523,7 @@ internal sealed class FormEquipes : FormBase
             ? ModeGeneration.SommeMaximale
             : ModeGeneration.MeilleureEquipeDAbord;
         _etoilesMinimum = LireMinimums(parametres);
-        _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis), parametres.GetValueOrDefault(CleEtoilesMiniHeros));
+        _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis), parametres.GetValueOrDefault(CleEtoilesMiniHeros), (int)Math.Clamp(Lire(parametres, CleEtoilesMiniHerosGlobal, 0), 0, FormOptionsGeneration.EtoilesMinimumMax));
         AfficherMode();
     }
 
@@ -830,18 +831,24 @@ internal sealed class FormEquipes : FormBase
 
     private void OuvrirOptions()
     {
-        using var dialogue = new FormOptionsGeneration(_poids);
+        using var dialogue = new FormOptionsGeneration(_poids, _reglages.EtoilesMiniHerosGlobal);
         if (dialogue.ShowDialog(this) != DialogResult.OK)
         {
             return;
         }
 
         var ancien = _poids;
+        var ancienSeuil = _reglages.EtoilesMiniHerosGlobal;
         _poids = dialogue.Poids;
+        _reglages.EtoilesMiniHerosGlobal = dialogue.EtoilesMiniHeros;
         if (!Proteger(SauvegarderParametres))
         {
             _poids = ancien;
+            _reglages.EtoilesMiniHerosGlobal = ancienSeuil;
+            return;
         }
+        // Le seuil global change ce que les cartes signalent comme non tenu.
+        AfficherCartes();
     }
 
     private void OuvrirRolesClasses()
@@ -995,6 +1002,7 @@ internal sealed class FormEquipes : FormBase
         BaseSqlite.EcrireParametre(CleHerosImposes, _reglages.SerialiserImposes(), _chemin);
         BaseSqlite.EcrireParametre(CleHerosBannis, _reglages.SerialiserBannis(), _chemin);
         BaseSqlite.EcrireParametre(CleEtoilesMiniHeros, _reglages.SerialiserEtoilesMiniHeros(), _chemin);
+        BaseSqlite.EcrireParametre(CleEtoilesMiniHerosGlobal, _reglages.EtoilesMiniHerosGlobal.ToString(CultureInfo.InvariantCulture), _chemin);
         BaseSqlite.EcrireParametre(CleListeVariantes, SerialiserVariantes(_variantes), _chemin);
     }
 

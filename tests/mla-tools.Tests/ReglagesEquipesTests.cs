@@ -9,6 +9,8 @@ public class ReglagesEquipesTests
     private const int Heros = 7;
     private const int NombreEquipes = 2;
     private const int SeuilHeros = 4;
+    private const int SeuilGlobal = 6;
+    private const int SeuilEquipeHaut = 9;
 
     [Fact]
     public void Un_heros_ne_peut_pas_etre_impose_a_deux_equipes()
@@ -119,6 +121,45 @@ public class ReglagesEquipesTests
 
         Assert.Equal(0, reglages.EtoilesMiniHeros(PremiereEquipe));
         Assert.Equal(FormOptionsGeneration.EtoilesMinimumMax, reglages.EtoilesMiniHeros(SecondeEquipe));
+    }
+
+    [Fact]
+    public void Le_seuil_global_s_applique_a_toutes_les_equipes_et_le_seuil_d_equipe_le_releve()
+    {
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = SeuilGlobal };
+        reglages.FixerEtoilesMiniHeros(SecondeEquipe, SeuilEquipeHaut);
+
+        Assert.Equal(SeuilGlobal, reglages.Criteres(PremiereEquipe, _ => true).EtoilesMiniHeros);
+        Assert.Equal(SeuilEquipeHaut, reglages.Criteres(SecondeEquipe, _ => true).EtoilesMiniHeros);
+    }
+
+    [Fact]
+    public void Un_seuil_d_equipe_sous_le_seuil_global_ne_l_assouplit_pas()
+    {
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = SeuilGlobal };
+        reglages.FixerEtoilesMiniHeros(PremiereEquipe, SeuilHeros);
+
+        Assert.Equal(SeuilGlobal, reglages.Criteres(PremiereEquipe, _ => true).EtoilesMiniHeros);
+    }
+
+    [Fact]
+    public void Le_seuil_global_survit_a_la_copie_et_a_la_reinitialisation_d_une_equipe()
+    {
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = SeuilGlobal };
+
+        var copie = reglages.Copier();
+        reglages.Reinitialiser(PremiereEquipe);
+
+        Assert.Equal(SeuilGlobal, copie.EtoilesMiniHerosGlobal);
+        Assert.Equal(SeuilGlobal, reglages.EtoilesMiniHerosGlobal);
+    }
+
+    [Fact]
+    public void Le_seuil_global_charge_est_borne_au_maximum_et_au_minimum()
+    {
+        Assert.Equal(FormOptionsGeneration.EtoilesMinimumMax, ReglagesEquipes.Charger(null, null, null, 9999).EtoilesMiniHerosGlobal);
+        Assert.Equal(0, ReglagesEquipes.Charger(null, null, null, -3).EtoilesMiniHerosGlobal);
+        Assert.Equal(SeuilGlobal, ReglagesEquipes.Charger(null, null, null, SeuilGlobal).EtoilesMiniHerosGlobal);
     }
 
     [Fact]
