@@ -22,12 +22,25 @@ internal enum ModeGeneration
 
 internal sealed record EvaluationEquipe(int Dps, int Tanks, int TanksSecondaires, int Soutiens, int Etoiles, int PenaliteRoles, int Points, string Description, int Chaos = 0);
 
-/// <summary>Héros imposés et bannis d'une équipe, et étoiles minimum de chaque héros (0 = aucun seuil) ; contrainte dure, tenue avant tout score.</summary>
+/// <summary>Héros et factions imposés ou bannis d'une équipe, et étoiles minimum de chaque héros (0 = aucun seuil) ; contrainte dure, tenue avant tout score.</summary>
 internal sealed record CriteresEquipe(IReadOnlySet<int> Imposes, IReadOnlySet<int> Bannis, int EtoilesMiniHeros = 0)
 {
     public static readonly CriteresEquipe Aucun = new(new HashSet<int>(), new HashSet<int>());
 
-    public bool EstVide => Imposes.Count == 0 && Bannis.Count == 0 && EtoilesMiniHeros == 0;
+    /// <summary>Chaque faction imposée doit être portée par au moins un héros de l'équipe.</summary>
+    public IReadOnlySet<string> FactionsImposees { get; init; } = new HashSet<string>();
+
+    /// <summary>Aucun héros de l'équipe ne doit porter une de ces factions.</summary>
+    public IReadOnlySet<string> FactionsBannies { get; init; } = new HashSet<string>();
+
+    public bool EstVide => Imposes.Count == 0 && Bannis.Count == 0 && EtoilesMiniHeros == 0 && FactionsImposees.Count == 0 && FactionsBannies.Count == 0;
+
+    public int FactionsManquantes(IReadOnlyCollection<int> equipe, Func<int, IReadOnlyList<string>> factionsDe) =>
+        FactionsImposees.Count(faction => !equipe.Any(id => factionsDe(id).Contains(faction)));
+
+    // Un héros compte une fois, même s'il porte plusieurs factions bannies.
+    public int HerosDeFactionBannie(IReadOnlyCollection<int> equipe, Func<int, IReadOnlyList<string>> factionsDe) =>
+        equipe.Count(id => factionsDe(id).Any(FactionsBannies.Contains));
 
     public IEnumerable<int> ImposesManquants(IReadOnlyCollection<int> equipe) => Imposes.Where(id => !equipe.Contains(id));
 
@@ -38,9 +51,11 @@ internal sealed record CriteresEquipe(IReadOnlySet<int> Imposes, IReadOnlySet<in
         equipe.Sum(id => Math.Max(0, EtoilesMiniHeros - etoilesDe(id)));
 
     /// <param name="etoilesDe">Étoiles d'un héros ; inutile (nul) tant qu'aucun seuil par héros n'est réglé.</param>
-    public int Ecarts(IReadOnlyCollection<int> equipe, Func<int, int>? etoilesDe = null) =>
+    /// <param name="factionsDe">Factions d'un héros ; inutile (nul) tant qu'aucune faction n'est imposée ou bannie.</param>
+    public int Ecarts(IReadOnlyCollection<int> equipe, Func<int, int>? etoilesDe = null, Func<int, IReadOnlyList<string>>? factionsDe = null) =>
         ImposesManquants(equipe).Count() + BannisPresents(equipe).Count()
-        + (EtoilesMiniHeros > 0 && etoilesDe is not null ? EtoilesManquantes(equipe, etoilesDe) : 0);
+        + (EtoilesMiniHeros > 0 && etoilesDe is not null ? EtoilesManquantes(equipe, etoilesDe) : 0)
+        + (factionsDe is null ? 0 : FactionsManquantes(equipe, factionsDe) + HerosDeFactionBannie(equipe, factionsDe));
 }
 
 internal sealed record RepartitionEquipes(IReadOnlyList<IReadOnlyList<int>> Equipes, IReadOnlyList<int> Reserve);
@@ -100,7 +115,7 @@ internal sealed class MoteurEquipes
 
     // Un tank secondaire est un héros lourd qui n'a pas le rôle Tank ; un héros moyen de rôle Tank est déjà compté comme tank.
     private sealed record InfoHero(
-        int Id, int Etoiles, string Role, int IndexRole, int[] Options, ulong Masque, bool ChaosPur, bool TankSecondaire, bool Moyen, string Equipement, int Famille);
+        int Id, int Etoiles, string Role, int IndexRole, int[] Options, ulong Masque, bool ChaosPur, bool TankSecondaire, bool Moyen, string Equipement, int Famille, IReadOnlyList<string> Factions);
 
     private readonly record struct Resonance(int Points, int Premier, int PremiereFaction, int SecondeFaction);
 
@@ -131,6 +146,9 @@ internal sealed class MoteurEquipes
     public int FamilleDe(int heroId) => _infos[heroId].Famille;
 
     public int EtoilesDe(int heroId) => _infos[heroId].Etoiles;
+
+    /// <summary>Factions telles que les critères les lisent : celles du héros, plus Ordre quand le lien d'âme le lui donne.</summary>
+    public IReadOnlyList<string> FactionsDe(int heroId) => _infos[heroId].Factions;
 
     public EvaluationEquipe Evaluer(IReadOnlyList<int> ids)
     {
@@ -177,7 +195,11 @@ internal sealed class MoteurEquipes
 
     // Le lien d'âme fait compter le héros dans la faction Ordre pour la résonance, sans changer ses factions affichées.
     public static HeroMoteur CreerHero(int id, int etoiles, string classe, IReadOnlyList<string> factions, bool lienAme, string equipement, int? famille = null) =>
-        new(id, etoiles, classe, lienAme && !factions.Contains(FactionOrdre) ? [.. factions, FactionOrdre] : factions, equipement, famille);
+        new(id, etoiles, classe, FactionsEffectives(factions, lienAme), equipement, famille);
+
+    // Partagé avec l'interface, pour que les critères de faction se lisent pareil dans le moteur et sur les cartes.
+    public static IReadOnlyList<string> FactionsEffectives(IReadOnlyList<string> factions, bool lienAme) =>
+        lienAme && !factions.Contains(FactionOrdre) ? [.. factions, FactionOrdre] : factions;
 
     private InfoHero Construire(HeroMoteur hero, IReadOnlyDictionary<string, string> roles)
     {
@@ -198,7 +220,7 @@ internal sealed class MoteurEquipes
         // Le Chaos l'emporte sur toute autre faction : le héros ne résonne pas mais donne un bonus aux alliés.
         if (hero.Factions.Contains(FactionChaos))
         {
-            return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, [], 0, true, tankSecondaire, moyen, equipement, famille);
+            return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, [], 0, true, tankSecondaire, moyen, equipement, famille, hero.Factions);
         }
         var factions = hero.Factions.ToList();
         if (factions.Contains(FactionOrdre))
@@ -208,7 +230,7 @@ internal sealed class MoteurEquipes
 
         var options = factions.Select(IndexerFaction).ToArray();
         var masque = options.Aggregate(0UL, (acc, index) => acc | (1UL << index));
-        return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, options, masque, false, tankSecondaire, moyen, equipement, famille);
+        return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, options, masque, false, tankSecondaire, moyen, equipement, famille, hero.Factions);
     }
 
     private int IndexerFaction(string faction)
@@ -435,7 +457,7 @@ internal sealed class MoteurEquipes
 
     // ---------- Optimisation par échanges (somme maximale, étoiles minimum) ----------
 
-    // Un héros imposé manquant, un banni présent ou une étoile manquante sous le seuil d'un héros coûte autant qu'une étoile manquante à l'équipe : plus que n'importe quelle perte de score.
+    // Un héros imposé manquant, un banni présent, une faction imposée absente, un héros d'une faction bannie ou une étoile manquante sous le seuil d'un héros coûte autant qu'une étoile manquante à l'équipe : plus que n'importe quelle perte de score.
     private FonctionCout CoutDuMode(PoidsEquipes poids, ModeGeneration mode, IReadOnlyList<int> etoilesMinimum, IReadOnlyList<CriteresEquipe> criteres)
     {
         Func<List<EvaluationEquipe>, double> coutDuScore = mode == ModeGeneration.SommeMaximale
@@ -450,7 +472,7 @@ internal sealed class MoteurEquipes
         var ecarts = 0;
         for (var i = 0; i < nombreEquipes && i < criteres.Count; i++)
         {
-            ecarts += criteres[i].Ecarts(equipes[i], EtoilesDe);
+            ecarts += criteres[i].Ecarts(equipes[i], EtoilesDe, FactionsDe);
         }
         return ecarts;
     }

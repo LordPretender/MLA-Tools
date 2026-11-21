@@ -8,6 +8,8 @@ internal sealed class FormReglageEquipe : FormDialogue
     private const string LibelleMinimum = "Étoiles mini pour l'équipe";
     private const string LibelleMinimumHeros = "Étoiles mini pour les héros";
     private const string MessageBientot = "Pas encore disponible.";
+    private const string MessageFactionBannie = "Cette faction est bannie dans cette équipe.";
+    private const string MessageFactionImposee = "Cette faction est imposée dans cette équipe.";
     private const string OngletHeros = "Héros";
     private const string OngletRoles = "Rôles";
     private const string OngletFactions = "Factions";
@@ -22,6 +24,10 @@ internal sealed class FormReglageEquipe : FormDialogue
     private readonly NumericUpDown _minimumHeros;
     private readonly ListBox _imposes = new() { Dock = DockStyle.Fill, IntegralHeight = false };
     private readonly ListBox _bannis = new() { Dock = DockStyle.Fill, IntegralHeight = false };
+    private readonly CheckedListBox _factionsImposees = ConstruireListeFactions();
+    private readonly CheckedListBox _factionsBannies = ConstruireListeFactions();
+    // Remplir les listes coche des cases : ces cochages ne sont pas des saisies et ne doivent pas toucher aux réglages.
+    private bool _remplissage;
 
     /// <param name="equipe">Index de l'équipe, à partir de 0.</param>
     /// <param name="etoilesMinimum">Minimum courant ; nul quand le réglage n'existe pas dans le mode courant.</param>
@@ -37,7 +43,7 @@ internal sealed class FormReglageEquipe : FormDialogue
         var onglets = new TabControl { Dock = DockStyle.Fill };
         onglets.TabPages.Add(ConstruireOngletHeros());
         onglets.TabPages.Add(ConstruireOngletVide(OngletRoles));
-        onglets.TabPages.Add(ConstruireOngletVide(OngletFactions));
+        onglets.TabPages.Add(ConstruireOngletFactions());
         onglets.TabPages.Add(ConstruireOngletVide(OngletEquipement));
         var tableEtoiles = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
         if (etoilesMinimum is { } valeur)
@@ -94,6 +100,48 @@ internal sealed class FormReglageEquipe : FormDialogue
         table.Controls.Add(BarreListe(AjouterImpose, () => Retirer(_imposes, Reglages.RetirerImpose)), 0, 2);
         table.Controls.Add(BarreListe(AjouterBanni, () => Retirer(_bannis, Reglages.RetirerBanni)), 1, 2);
         return ConstruireOnglet(OngletHeros, table);
+    }
+
+    private static CheckedListBox ConstruireListeFactions()
+    {
+        var liste = new CheckedListBox { Dock = DockStyle.Fill, IntegralHeight = false, CheckOnClick = true };
+        liste.Items.AddRange([.. Referentiel.Factions]);
+        return liste;
+    }
+
+    private TabPage ConstruireOngletFactions()
+    {
+        var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        table.Controls.Add(new Label { Text = "Factions imposées (au moins un héros)", AutoSize = true }, 0, 0);
+        table.Controls.Add(new Label { Text = "Factions bannies (aucun héros)", AutoSize = true }, 1, 0);
+        table.Controls.Add(_factionsImposees, 0, 1);
+        table.Controls.Add(_factionsBannies, 1, 1);
+        _factionsImposees.ItemCheck += (_, e) => BasculerFaction(_factionsImposees, e, Reglages.ImposerFaction, Reglages.RetirerFactionImposee, MessageFactionBannie);
+        _factionsBannies.ItemCheck += (_, e) => BasculerFaction(_factionsBannies, e, Reglages.BannirFaction, Reglages.RetirerFactionBannie, MessageFactionImposee);
+        return ConstruireOnglet(OngletFactions, table);
+    }
+
+    private void BasculerFaction(CheckedListBox liste, ItemCheckEventArgs e, Func<int, string, bool> enregistrer, Action<int, string> retirer, string messageRefus)
+    {
+        if (_remplissage)
+        {
+            return;
+        }
+        var faction = (string)liste.Items[e.Index];
+        if (e.NewValue != CheckState.Checked)
+        {
+            retirer(_equipe, faction);
+        }
+        else if (!enregistrer(_equipe, faction))
+        {
+            e.NewValue = e.CurrentValue;
+            MessageBox.Show(this, messageRefus, TitreApplication, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     private static FlowLayoutPanel BarreListe(Action ajouter, Action retirer)
@@ -153,6 +201,18 @@ internal sealed class FormReglageEquipe : FormDialogue
     {
         Remplir(_imposes, Reglages.Imposes(_equipe));
         Remplir(_bannis, Reglages.Bannis(_equipe));
+        _remplissage = true;
+        Cocher(_factionsImposees, Reglages.FactionsImposees(_equipe));
+        Cocher(_factionsBannies, Reglages.FactionsBannies(_equipe));
+        _remplissage = false;
+    }
+
+    private static void Cocher(CheckedListBox liste, IReadOnlyCollection<string> choisies)
+    {
+        for (var i = 0; i < liste.Items.Count; i++)
+        {
+            liste.SetItemChecked(i, choisies.Contains((string)liste.Items[i]));
+        }
     }
 
     private void Remplir(ListBox liste, IEnumerable<int> ids)

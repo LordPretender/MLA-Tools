@@ -34,6 +34,8 @@ internal sealed class FormEquipes : FormBase
     private const char SeparateurMinimums = ',';
     private const string CleHerosImposes = "heros_imposes";
     private const string CleHerosBannis = "heros_bannis";
+    private const string CleFactionsImposees = "factions_imposees";
+    private const string CleFactionsBannies = "factions_bannies";
     private const string CleEtoilesMiniHeros = "etoiles_mini_heros";
     private const string CleEtoilesMiniHerosGlobal = "etoiles_mini_heros_global";
     private const string CleVariantes = "variantes";
@@ -174,7 +176,7 @@ internal sealed class FormEquipes : FormBase
             MenuEquipe = _menuEquipe,
             SurClic = Cliquer,
             EstSousMinimum = EstSousMinimum,
-            CriteresNonTenus = (ids, rang) => _reglages.Criteres(rang, _parId.ContainsKey).Ecarts(ids, EtoilesDe) > 0,
+            CriteresNonTenus = (ids, rang) => _reglages.Criteres(rang, _parId.ContainsKey).Ecarts(ids, EtoilesDe, FactionsDe) > 0,
             SurReglage = ReglerEquipe,
         };
         Font = _police;
@@ -523,7 +525,7 @@ internal sealed class FormEquipes : FormBase
             ? ModeGeneration.SommeMaximale
             : ModeGeneration.MeilleureEquipeDAbord;
         _etoilesMinimum = LireMinimums(parametres);
-        _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis), parametres.GetValueOrDefault(CleEtoilesMiniHeros), (int)Math.Clamp(Lire(parametres, CleEtoilesMiniHerosGlobal, 0), 0, FormOptionsGeneration.EtoilesMinimumMax));
+        _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis), parametres.GetValueOrDefault(CleEtoilesMiniHeros), (int)Math.Clamp(Lire(parametres, CleEtoilesMiniHerosGlobal, 0), 0, FormOptionsGeneration.EtoilesMinimumMax), parametres.GetValueOrDefault(CleFactionsImposees), parametres.GetValueOrDefault(CleFactionsBannies));
         AfficherMode();
     }
 
@@ -733,6 +735,8 @@ internal sealed class FormEquipes : FormBase
     private IReadOnlyList<CriteresEquipe> Criteres(int nombreEquipes) => _reglages.Pour(nombreEquipes, _parId.ContainsKey);
 
     private int EtoilesDe(int id) => _parId[id].Hero.Etoiles;
+
+    private IReadOnlyList<string> FactionsDe(int id) => MoteurEquipes.FactionsEffectives(_parId[id].Hero.Factions, _parId[id].LienAme);
 
     // Les listes se reconstruisent depuis la base : une classe ou une faction n'existe que si un héros la porte.
     private void ActualiserFiltres()
@@ -944,7 +948,7 @@ internal sealed class FormEquipes : FormBase
     {
         var evaluations = _variantes[index].Equipes.Select(e => _moteur.Evaluer(e)).ToList();
         var criteres = Criteres(evaluations.Count);
-        var alerte = evaluations.Select((e, rang) => e.PenaliteRoles > 0 || EstSousMinimum(e, rang) || criteres[rang].Ecarts(_variantes[index].Equipes[rang], EtoilesDe) > 0).Any(a => a);
+        var alerte = evaluations.Select((e, rang) => e.PenaliteRoles > 0 || EstSousMinimum(e, rang) || criteres[rang].Ecarts(_variantes[index].Equipes[rang], EtoilesDe, FactionsDe) > 0).Any(a => a);
         return $"{index + 1} · {string.Join(SeparateurPoints, evaluations.Select(e => e.Etoiles))}{(alerte ? SigneAlerte : string.Empty)}";
     }
 
@@ -1001,6 +1005,8 @@ internal sealed class FormEquipes : FormBase
         BaseSqlite.EcrireParametre(CleEtoilesMinimum, string.Join(SeparateurMinimums, _etoilesMinimum), _chemin);
         BaseSqlite.EcrireParametre(CleHerosImposes, _reglages.SerialiserImposes(), _chemin);
         BaseSqlite.EcrireParametre(CleHerosBannis, _reglages.SerialiserBannis(), _chemin);
+        BaseSqlite.EcrireParametre(CleFactionsImposees, _reglages.SerialiserFactionsImposees(), _chemin);
+        BaseSqlite.EcrireParametre(CleFactionsBannies, _reglages.SerialiserFactionsBannies(), _chemin);
         BaseSqlite.EcrireParametre(CleEtoilesMiniHeros, _reglages.SerialiserEtoilesMiniHeros(), _chemin);
         BaseSqlite.EcrireParametre(CleEtoilesMiniHerosGlobal, _reglages.EtoilesMiniHerosGlobal.ToString(CultureInfo.InvariantCulture), _chemin);
         BaseSqlite.EcrireParametre(CleListeVariantes, SerialiserVariantes(_variantes), _chemin);

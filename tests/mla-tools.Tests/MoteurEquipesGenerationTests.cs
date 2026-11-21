@@ -52,8 +52,12 @@ public class MoteurEquipesGenerationTests
         IReadOnlyList<CriteresEquipe>? criteres = null) =>
         moteur.GenererVariantes(nombreEquipes, Poids, mode, etoilesMinimum ?? SansMinimum, nombreVariantes, criteres);
 
-    private static CriteresEquipe Criteres(int[]? imposes = null, int[]? bannis = null, int etoilesMiniHeros = 0) =>
-        new((imposes ?? []).ToHashSet(), (bannis ?? []).ToHashSet(), etoilesMiniHeros);
+    private static CriteresEquipe Criteres(int[]? imposes = null, int[]? bannis = null, int etoilesMiniHeros = 0, string[]? factionsImposees = null, string[]? factionsBannies = null) =>
+        new((imposes ?? []).ToHashSet(), (bannis ?? []).ToHashSet(), etoilesMiniHeros)
+        {
+            FactionsImposees = (factionsImposees ?? []).ToHashSet(),
+            FactionsBannies = (factionsBannies ?? []).ToHashSet(),
+        };
 
     // Douze héros variés : trois rôles, deux équipements, des factions qui se recoupent, des étoiles de 1 à 5.
     private static HeroMoteur[] JeuVarie() =>
@@ -450,5 +454,65 @@ public class MoteurEquipesGenerationTests
         Assert.Equal(
             Empreinte(Variantes(moteur, 2, mode)),
             Empreinte(Variantes(moteur, 2, mode, criteres: [Criteres(etoilesMiniHeros: 0), Criteres(etoilesMiniHeros: 0)])));
+    }
+
+    // Dans JeuVarie, FactionZ n'est portée que par les héros 6, 8 et 10 : les neuf autres suffisent à former une équipe sans elle.
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Une_faction_imposee_est_portee_par_un_heros_de_l_equipe(string nomMode)
+    {
+        var moteur = Moteur(JeuVarie());
+
+        var variantes = Variantes(moteur, 2, Enum.Parse<ModeGeneration>(nomMode), criteres: [CriteresEquipe.Aucun, Criteres(factionsImposees: [FactionZ])]);
+
+        Assert.All(variantes, v => Assert.Contains(v.Equipes[1], id => moteur.FactionsDe(id).Contains(FactionZ)));
+    }
+
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Aucun_heros_de_l_equipe_ne_porte_une_faction_bannie(string nomMode)
+    {
+        var moteur = Moteur(JeuVarie());
+
+        var variantes = Variantes(moteur, 2, Enum.Parse<ModeGeneration>(nomMode), criteres: [Criteres(factionsBannies: [FactionZ]), CriteresEquipe.Aucun]);
+
+        Assert.All(variantes, v => Assert.All(v.Equipes[0], id => Assert.DoesNotContain(FactionZ, moteur.FactionsDe(id))));
+    }
+
+    [Fact]
+    public void Les_ecarts_comptent_les_factions_imposees_absentes_et_les_heros_de_faction_bannie()
+    {
+        var criteres = Criteres(factionsImposees: [FactionX, FactionY], factionsBannies: [FactionZ]);
+        IReadOnlyList<string> FactionsDeLHero(int id) => id switch { 1 => [FactionX], 2 => [FactionZ], 3 => [FactionX, FactionZ], _ => [] };
+
+        // Équipe 1 et 2 : FactionY imposée manque (1) et le héros 2 porte une faction bannie (1).
+        Assert.Equal(2, criteres.Ecarts([1, 2], factionsDe: FactionsDeLHero));
+        // Le héros 3 porte deux factions bannies mais ne compte qu'une fois.
+        Assert.Equal(1, Criteres(factionsBannies: [FactionX, FactionZ]).Ecarts([3], factionsDe: FactionsDeLHero));
+        Assert.Equal(0, criteres.Ecarts([1, 2], factionsDe: null));
+    }
+
+    [Fact]
+    public void Une_faction_imposee_introuvable_ne_bloque_pas_la_generation()
+    {
+        var moteur = Moteur(JeuVarie());
+        var criteres = new[] { Criteres(factionsImposees: ["Inexistante"]), CriteresEquipe.Aucun };
+
+        var variantes = Variantes(moteur, 2, ModeGeneration.SommeMaximale, criteres: criteres);
+
+        Assert.NotEmpty(variantes);
+        Assert.All(variantes, v => Assert.True(criteres[0].Ecarts(v.Equipes[0], factionsDe: moteur.FactionsDe) > 0));
+    }
+
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Des_factions_sans_critere_laissent_la_generation_inchangee(string nomMode)
+    {
+        var mode = Enum.Parse<ModeGeneration>(nomMode);
+        var moteur = Moteur(JeuVarie());
+
+        Assert.Equal(
+            Empreinte(Variantes(moteur, 2, mode)),
+            Empreinte(Variantes(moteur, 2, mode, criteres: [Criteres(factionsImposees: []), Criteres(factionsBannies: [])])));
     }
 }

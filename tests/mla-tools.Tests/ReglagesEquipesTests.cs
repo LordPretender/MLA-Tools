@@ -11,6 +11,8 @@ public class ReglagesEquipesTests
     private const int SeuilHeros = 4;
     private const int SeuilGlobal = 6;
     private const int SeuilEquipeHaut = 9;
+    private static readonly string FactionA = Referentiel.FactionsRegulieres[0];
+    private static readonly string FactionB = Referentiel.FactionsRegulieres[1];
 
     [Fact]
     public void Un_heros_ne_peut_pas_etre_impose_a_deux_equipes()
@@ -160,6 +162,81 @@ public class ReglagesEquipesTests
         Assert.Equal(FormOptionsGeneration.EtoilesMinimumMax, ReglagesEquipes.Charger(null, null, null, 9999).EtoilesMiniHerosGlobal);
         Assert.Equal(0, ReglagesEquipes.Charger(null, null, null, -3).EtoilesMiniHerosGlobal);
         Assert.Equal(SeuilGlobal, ReglagesEquipes.Charger(null, null, null, SeuilGlobal).EtoilesMiniHerosGlobal);
+    }
+
+    [Fact]
+    public void Une_faction_ne_peut_pas_etre_imposee_et_bannie_dans_la_meme_equipe()
+    {
+        var reglages = new ReglagesEquipes();
+        reglages.ImposerFaction(PremiereEquipe, FactionA);
+
+        Assert.False(reglages.BannirFaction(PremiereEquipe, FactionA));
+        Assert.True(reglages.BannirFaction(SecondeEquipe, FactionA));
+        Assert.False(reglages.ImposerFaction(SecondeEquipe, FactionA));
+    }
+
+    [Fact]
+    public void Une_faction_peut_etre_imposee_a_plusieurs_equipes()
+    {
+        var reglages = new ReglagesEquipes();
+
+        Assert.True(reglages.ImposerFaction(PremiereEquipe, FactionA));
+        Assert.True(reglages.ImposerFaction(SecondeEquipe, FactionA));
+    }
+
+    [Fact]
+    public void Retirer_une_faction_la_rend_disponible_pour_l_autre_critere()
+    {
+        var reglages = new ReglagesEquipes();
+        reglages.ImposerFaction(PremiereEquipe, FactionA);
+
+        reglages.RetirerFactionImposee(PremiereEquipe, FactionA);
+
+        Assert.True(reglages.BannirFaction(PremiereEquipe, FactionA));
+    }
+
+    [Fact]
+    public void Les_factions_se_serialisent_se_copient_et_se_reinitialisent_par_equipe()
+    {
+        var reglages = new ReglagesEquipes();
+        reglages.ImposerFaction(PremiereEquipe, FactionA);
+        reglages.BannirFaction(PremiereEquipe, FactionB);
+        reglages.BannirFaction(SecondeEquipe, FactionB);
+
+        var relu = ReglagesEquipes.Charger(null, null, factionsImposees: reglages.SerialiserFactionsImposees(), factionsBannies: reglages.SerialiserFactionsBannies());
+        var copie = reglages.Copier();
+        reglages.Reinitialiser(PremiereEquipe);
+
+        Assert.Equal(copie.SerialiserFactionsBannies(), relu.SerialiserFactionsBannies());
+        Assert.Equal([FactionA], relu.FactionsImposees(PremiereEquipe));
+        Assert.Equal([FactionB], relu.FactionsBannies(PremiereEquipe));
+        Assert.Equal([FactionA], copie.FactionsImposees(PremiereEquipe));
+        Assert.Empty(reglages.FactionsImposees(PremiereEquipe));
+        Assert.Empty(reglages.FactionsBannies(PremiereEquipe));
+        Assert.Equal([FactionB], reglages.FactionsBannies(SecondeEquipe));
+    }
+
+    [Fact]
+    public void Une_faction_inconnue_est_ignoree_au_chargement()
+    {
+        var reglages = ReglagesEquipes.Charger(null, null, factionsImposees: $"{PremiereEquipe}:Inconnue,{FactionA};x:{FactionB}");
+
+        Assert.Equal([FactionA], reglages.FactionsImposees(PremiereEquipe));
+    }
+
+    [Fact]
+    public void Les_factions_figurent_dans_les_criteres_de_l_equipe()
+    {
+        var reglages = new ReglagesEquipes();
+        reglages.ImposerFaction(PremiereEquipe, FactionA);
+        reglages.BannirFaction(PremiereEquipe, FactionB);
+
+        var criteres = reglages.Criteres(PremiereEquipe, _ => true);
+
+        Assert.False(criteres.EstVide);
+        Assert.Equal([FactionA], criteres.FactionsImposees);
+        Assert.Equal([FactionB], criteres.FactionsBannies);
+        Assert.True(reglages.Criteres(SecondeEquipe, _ => true).EstVide);
     }
 
     [Fact]
