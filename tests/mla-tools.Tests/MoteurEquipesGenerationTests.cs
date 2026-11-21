@@ -10,6 +10,8 @@ public class MoteurEquipesGenerationTests
     private const int MinimumEtoilesEquipe = 30;
     private const int EtoilesHeroFort = 10;
     private const int FamilleDesDeuxFormes = 3;
+    private const int IdChaos = 6;
+    private const int IdAutreType = 5;
     // Assez grand pour que chaque famille ainsi numérotée diffère de tous les identifiants de héros du jeu de test.
     private const int DecalageFamilleDistincte = 100;
 
@@ -22,7 +24,16 @@ public class MoteurEquipesGenerationTests
 
     // Score d'une équipe selon les poids par défaut : le moteur ne l'expose pas, on le recalcule depuis son évaluation.
     private static double Score(EvaluationEquipe evaluation) =>
-        -Poids.Roles * evaluation.PenaliteRoles + Poids.Resonance * evaluation.Points / 10 + Poids.Etoiles * evaluation.Etoiles;
+        -Poids.Roles * evaluation.PenaliteRoles + Poids.Resonance * evaluation.Points / 10 + Poids.Etoiles * evaluation.Etoiles + Poids.ValeurChaos(evaluation.Chaos);
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 15)]
+    [InlineData(2, 20)]
+    [InlineData(3, 23)]
+    [InlineData(4, 23)]
+    public void Valeur_chaos_cumule_les_paliers_sans_depasser_le_troisieme(int chaos, double attendu) =>
+        Assert.Equal(attendu, Poids.ValeurChaos(chaos));
 
     private static double ScoreEquipe(MoteurEquipes moteur, IReadOnlyList<int> equipe) => Score(moteur.Evaluer(equipe));
 
@@ -80,6 +91,27 @@ public class MoteurEquipesGenerationTests
 
     private static double MeilleurScoreExhaustif(MoteurEquipes moteur, int[] ids) =>
         Combinaisons(ids, Math.Min(MoteurEquipes.TailleEquipe, ids.Length)).Max(c => ScoreEquipe(moteur, c));
+
+    [Fact]
+    public void Quatre_de_meme_type_et_un_chaos_battent_cinq_de_meme_type()
+    {
+        HeroMoteur[] heros = [.. Enumerable.Range(1, 5).Select(id => Hero(id, ClasseDps, [FactionX])), HeroChaosPur(IdChaos)];
+
+        var equipe = Variantes(Moteur(heros), 1, ModeGeneration.MeilleureEquipeDAbord)[0].Equipes[0];
+
+        Assert.Contains(IdChaos, equipe);
+    }
+
+    [Fact]
+    public void Un_chaos_est_prefere_a_un_cinquieme_heros_d_un_autre_type()
+    {
+        HeroMoteur[] heros = [.. Enumerable.Range(1, 4).Select(id => Hero(id, ClasseDps, [FactionX])), Hero(IdAutreType, ClasseDps, [FactionY]), HeroChaosPur(IdChaos)];
+
+        var equipe = Variantes(Moteur(heros), 1, ModeGeneration.MeilleureEquipeDAbord)[0].Equipes[0];
+
+        Assert.Contains(IdChaos, equipe);
+        Assert.DoesNotContain(IdAutreType, equipe);
+    }
 
     [Theory]
     [MemberData(nameof(Modes))]

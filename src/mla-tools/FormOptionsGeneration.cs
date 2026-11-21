@@ -16,18 +16,29 @@ internal sealed class FormOptionsGeneration : FormDialogue
 
     private readonly NumericUpDown _poidsEtoiles = ChampPoids();
 
+    private readonly NumericUpDown _poidsChaos1 = ChampPoids();
+
+    private readonly NumericUpDown _poidsChaos2 = ChampPoids();
+
+    private readonly NumericUpDown _poidsChaos3 = ChampPoids();
+
     public FormOptionsGeneration(PoidsEquipes poids)
-        : base("Options de génération", new Size(400, 170))
+        : base("Options de génération", new Size(400, 270))
     {
         _poidsRoles.Value = Borner(poids.Roles);
         _poidsResonance.Value = Borner(poids.Resonance);
         _poidsEtoiles.Value = Borner(poids.Etoiles);
+        _poidsChaos1.Value = Borner(poids.Chaos1);
+        _poidsChaos2.Value = Borner(poids.Chaos2);
+        _poidsChaos3.Value = Borner(poids.Chaos3);
 
         Controls.Add(ConstruireChamps());
         Controls.Add(ConstruireBoutons(() => DialogResult = DialogResult.OK));
     }
 
-    public PoidsEquipes Poids => new((double)_poidsRoles.Value, (double)_poidsResonance.Value, (double)_poidsEtoiles.Value);
+    public PoidsEquipes Poids => new(
+        (double)_poidsRoles.Value, (double)_poidsResonance.Value, (double)_poidsEtoiles.Value,
+        (double)_poidsChaos1.Value, (double)_poidsChaos2.Value, (double)_poidsChaos3.Value);
 
     private static NumericUpDown ChampPoids() => new() { Minimum = 0, Maximum = PoidsMax, Width = 80 };
 
@@ -41,6 +52,9 @@ internal sealed class FormOptionsGeneration : FormDialogue
         OutilsDialogue.AjouterLigne(table, "Poids des rôles", _poidsRoles);
         OutilsDialogue.AjouterLigne(table, "Poids de la résonance", _poidsResonance);
         OutilsDialogue.AjouterLigne(table, "Poids des étoiles", _poidsEtoiles);
+        OutilsDialogue.AjouterLigne(table, "Valeur du 1er héros Chaos", _poidsChaos1);
+        OutilsDialogue.AjouterLigne(table, "Valeur du 2e héros Chaos", _poidsChaos2);
+        OutilsDialogue.AjouterLigne(table, "Valeur du 3e héros Chaos", _poidsChaos3);
         return table;
     }
 }

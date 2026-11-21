@@ -10,6 +10,8 @@ public class MoteurEquipesEvaluationTests
     private const string BonusPour33 = "PV+15% Atq+18%";
     private const string BonusPour40 = "PV+20% Atq+20%";
     private const string BonusPour50 = "PV+25% Atq+25%";
+    private const string BonusChaosDefense = "Défense+30%";
+    private const string BonusChaosTrois = "Défense+30%, Régénération d'énergie+25%, Taux critique+15%";
     private const string DescriptionSansResonance = "Aucune résonance";
     private const int FactionsMaximum = 64;
 
@@ -75,7 +77,7 @@ public class MoteurEquipesEvaluationTests
     {
         HeroMoteur[] equipe = [.. Heros(3, ClasseDps, FactionX), HeroChaosPur(100)];
 
-        Assert.Equal($"3× {FactionX} — {BonusPour25} (+1 Chaos : bonus aux alliés)", EvaluerEquipe(equipe).Description);
+        Assert.Equal($"3× {FactionX} — {BonusPour25} (+1 Chaos : {BonusChaosDefense})", EvaluerEquipe(equipe).Description);
     }
 
     [Fact]
@@ -84,7 +86,15 @@ public class MoteurEquipesEvaluationTests
         var evaluation = EvaluerEquipe([.. Heros(3, ClasseDps, Referentiel.FactionChaos)]);
 
         Assert.Equal(0, evaluation.Points);
-        Assert.Equal($"{DescriptionSansResonance} (+3 Chaos : bonus aux alliés)", evaluation.Description);
+        Assert.Equal($"{DescriptionSansResonance} (+3 Chaos : {BonusChaosTrois})", evaluation.Description);
+    }
+
+    [Fact]
+    public void Heros_chaos_sont_comptes_dans_l_evaluation()
+    {
+        HeroMoteur[] equipe = [.. Heros(3, ClasseDps, FactionX), HeroChaosPur(100), HeroChaosPur(101)];
+
+        Assert.Equal(2, EvaluerEquipe(equipe).Chaos);
     }
 
     [Fact]
@@ -103,7 +113,7 @@ public class MoteurEquipesEvaluationTests
         var evaluation = EvaluerEquipe(equipe);
 
         Assert.Equal(0, evaluation.Points);
-        Assert.Equal($"{DescriptionSansResonance} (+3 Chaos : bonus aux alliés)", evaluation.Description);
+        Assert.Equal($"{DescriptionSansResonance} (+3 Chaos : {BonusChaosTrois})", evaluation.Description);
     }
 
     [Fact]

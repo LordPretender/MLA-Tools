@@ -4,9 +4,13 @@ namespace MlaTools;
 
 internal sealed record HeroMoteur(int Id, int Etoiles, string Classe, IReadOnlyList<string> Factions, string Equipement, int? Famille = null);
 
-internal sealed record PoidsEquipes(double Roles, double Resonance, double Etoiles)
+/// <summary>Chaos1, Chaos2 et Chaos3 : valeur du 1er, du 2e et du 3e héros Chaos d'une équipe, dans l'unité des points de résonance.</summary>
+internal sealed record PoidsEquipes(double Roles, double Resonance, double Etoiles, double Chaos1 = 15, double Chaos2 = 5, double Chaos3 = 3)
 {
     public static readonly PoidsEquipes ParDefaut = new(100, 10, 1);
+
+    // Les paliers se cumulent : le 2e héros s'ajoute au 1er, le 3e au 2e ; au-delà de trois, aucun palier de plus.
+    public double ValeurChaos(int chaos) => new[] { Chaos1, Chaos2, Chaos3 }.Take(chaos).Sum();
 }
 
 /// <summary>Façon de répartir les héros : la première équipe la plus forte possible, ou la somme des scores maximale.</summary>
@@ -16,7 +20,7 @@ internal enum ModeGeneration
     SommeMaximale = 1,
 }
 
-internal sealed record EvaluationEquipe(int Dps, int Tanks, int TanksSecondaires, int Soutiens, int Etoiles, int PenaliteRoles, int Points, string Description);
+internal sealed record EvaluationEquipe(int Dps, int Tanks, int TanksSecondaires, int Soutiens, int Etoiles, int PenaliteRoles, int Points, string Description, int Chaos = 0);
 
 internal sealed record RepartitionEquipes(IReadOnlyList<IReadOnlyList<int>> Equipes, IReadOnlyList<int> Reserve);
 
@@ -61,6 +65,9 @@ internal sealed class MoteurEquipes
     private const int EchangesPerturbation = 6;
 
     private static readonly string[] FactionsRegulieres = Referentiel.FactionsRegulieres;
+
+    // Dans l'ordre des paliers : le n-ième bonus s'ajoute à partir du n-ième héros Chaos.
+    private static readonly string[] BonusChaos = ["Défense+30%", "Régénération d'énergie+25%", "Taux critique+15%"];
 
     private static readonly Dictionary<int, string> Bonus = new()
     {
@@ -112,7 +119,7 @@ internal sealed class MoteurEquipes
 
         var mesure = Mesurer(ids.Select(id => _infos[id]).ToArray());
         var evaluation = new EvaluationEquipe(
-            mesure.Dps, mesure.Tanks, mesure.TanksSecondaires, mesure.Soutiens, mesure.Etoiles, mesure.Penalite, mesure.Resonance.Points, Decrire(mesure));
+            mesure.Dps, mesure.Tanks, mesure.TanksSecondaires, mesure.Soutiens, mesure.Etoiles, mesure.Penalite, mesure.Resonance.Points, Decrire(mesure), mesure.Chaos);
         _cache[cle] = evaluation;
         return evaluation;
     }
@@ -300,7 +307,7 @@ internal sealed class MoteurEquipes
             var secondaire = resonance.Points == PointsBonusDouble ? $" + 2× {_factions[resonance.SecondeFaction]}" : string.Empty;
             description = $"{resonance.Premier}× {_factions[resonance.PremiereFaction]}{secondaire} — {Bonus[resonance.Points]}";
         }
-        return mesure.Chaos > 0 ? description + $" (+{mesure.Chaos} Chaos : bonus aux alliés)" : description;
+        return mesure.Chaos > 0 ? description + $" (+{mesure.Chaos} Chaos : {string.Join(", ", BonusChaos.Take(mesure.Chaos))})" : description;
     }
 
     private static int PointsDe(int premier, int second) => premier switch
@@ -313,11 +320,11 @@ internal sealed class MoteurEquipes
     };
 
     // Plus le score est haut, meilleure est l'équipe ; la résonance est comptée en dixièmes de points de bonus.
-    private static double Score(int penalite, int points, int etoiles, PoidsEquipes poids) =>
-        -poids.Roles * penalite + poids.Resonance * points / 10 + poids.Etoiles * etoiles;
+    private static double Score(int penalite, int points, int etoiles, int chaos, PoidsEquipes poids) =>
+        -poids.Roles * penalite + poids.Resonance * points / 10 + poids.Etoiles * etoiles + poids.ValeurChaos(chaos);
 
     private static double Score(EvaluationEquipe evaluation, PoidsEquipes poids) =>
-        Score(evaluation.PenaliteRoles, evaluation.Points, evaluation.Etoiles, poids);
+        Score(evaluation.PenaliteRoles, evaluation.Points, evaluation.Etoiles, evaluation.Chaos, poids);
 
     // ---------- Mode « meilleure équipe d'abord » ----------
 
@@ -352,7 +359,7 @@ internal sealed class MoteurEquipes
             if (position == taille)
             {
                 var mesure = Mesurer(courante);
-                var score = Score(mesure.Penalite, mesure.Resonance.Points, mesure.Etoiles, poids);
+                var score = Score(mesure.Penalite, mesure.Resonance.Points, mesure.Etoiles, mesure.Chaos, poids);
                 if (score > meilleurScore)
                 {
                     meilleurScore = score;
@@ -376,7 +383,7 @@ internal sealed class MoteurEquipes
     }
 
     // Retire sans perte les héros « dominés » : s'il en existe au moins TailleEquipe autres de même rôle
-    // et de même équipement (le front en dépend), aux étoiles au moins égales et aux factions au moins aussi nombreuses, l'un d'eux est forcément hors de l'équipe
+    // et de même équipement (le front en dépend), de même nature Chaos (son bonus n'est pas une faction), aux étoiles au moins égales et aux factions au moins aussi nombreuses, l'un d'eux est forcément hors de l'équipe
     // et la remplace sans rien perdre. Les dominateurs se comptent par famille : quatre coéquipiers bloquent au plus quatre familles, donc cinq familles
     // dominantes laissent toujours un remplaçant sans doublon. Au-delà de ReservoirMaximum, on ne garde que les mieux dotés en étoiles.
     private static List<InfoHero> Reduire(List<InfoHero> restants)
@@ -388,7 +395,7 @@ internal sealed class MoteurEquipes
             var dominateurs = new HashSet<int>();
             for (var j = 0; j < i && dominateurs.Count < TailleEquipe; j++)
             {
-                if (restants[j].IndexRole == hero.IndexRole && restants[j].Equipement == hero.Equipement && (restants[j].Masque & hero.Masque) == hero.Masque)
+                if (restants[j].IndexRole == hero.IndexRole && restants[j].Equipement == hero.Equipement && restants[j].ChaosPur == hero.ChaosPur && (restants[j].Masque & hero.Masque) == hero.Masque)
                 {
                     dominateurs.Add(restants[j].Famille);
                 }

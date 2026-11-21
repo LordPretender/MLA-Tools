@@ -26,6 +26,9 @@ internal sealed class FormEquipes : FormBase
     private const string CleRoles = "poids_roles";
     private const string CleResonance = "poids_resonance";
     private const string CleEtoiles = "poids_etoiles";
+    private const string CleChaos1 = "poids_chaos1";
+    private const string CleChaos2 = "poids_chaos2";
+    private const string CleChaos3 = "poids_chaos3";
     private const string CleMode = "mode_generation";
     private const string CleEtoilesMinimum = "etoiles_min";
     private const char SeparateurMinimums = ',';
@@ -506,7 +509,10 @@ internal sealed class FormEquipes : FormBase
         _poids = new PoidsEquipes(
             LirePoids(parametres, CleRoles, _poids.Roles),
             LirePoids(parametres, CleResonance, _poids.Resonance),
-            LirePoids(parametres, CleEtoiles, _poids.Etoiles));
+            LirePoids(parametres, CleEtoiles, _poids.Etoiles),
+            LirePoids(parametres, CleChaos1, _poids.Chaos1),
+            LirePoids(parametres, CleChaos2, _poids.Chaos2),
+            LirePoids(parametres, CleChaos3, _poids.Chaos3));
         _mode = Lire(parametres, CleMode, (decimal)_mode) == (decimal)ModeGeneration.SommeMaximale
             ? ModeGeneration.SommeMaximale
             : ModeGeneration.MeilleureEquipeDAbord;
@@ -960,6 +966,9 @@ internal sealed class FormEquipes : FormBase
             (CleRoles, (decimal)_poids.Roles),
             (CleResonance, (decimal)_poids.Resonance),
             (CleEtoiles, (decimal)_poids.Etoiles),
+            (CleChaos1, (decimal)_poids.Chaos1),
+            (CleChaos2, (decimal)_poids.Chaos2),
+            (CleChaos3, (decimal)_poids.Chaos3),
             (CleMode, (decimal)_mode),
         };
         foreach (var (cle, valeur) in valeurs)
