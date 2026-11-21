@@ -4,7 +4,7 @@ namespace MlaTools;
 
 /// <summary>Dessine les cartes d'équipe et la carte de réserve ; partagé par le Générateur et l'onglet des compositions enregistrées.</summary>
 /// <remarks>Les polices appartiennent à la fenêtre appelante, qui les libère.</remarks>
-internal sealed class CartesEquipes(Font police, Font gras)
+internal sealed class CartesEquipes(Font police, Font gras) : IDisposable
 {
     public const int LargeurCarte = 340;
     public const int MargeCarte = 8;
@@ -14,6 +14,7 @@ internal sealed class CartesEquipes(Font police, Font gras)
     /// <summary>Entrée du menu contextuel d'une équipe, commune au Générateur et à l'onglet des compositions.</summary>
     public const string LibelleRetrait = "Envoyer en réserve";
     private const string AlerteRoles = " — hors cible";
+    private const string LibelleInactive = "Équipe non générée : ";
     private const string LibelleAjout = "Ajouter un héros…";
     private const string LibelleReglage = "⚙";
     private const string InfobulleReglage = "Réglages de l'équipe";
@@ -29,6 +30,11 @@ internal sealed class CartesEquipes(Font police, Font gras)
     private static readonly Color FondRouge = Color.FromArgb(252, 232, 230);
     private static readonly Color TexteRouge = Color.FromArgb(197, 34, 31);
     private static readonly Color FondNeutre = Color.FromArgb(238, 238, 238);
+
+    // Une seule infobulle pour toutes les lignes : une par ligne serait recréée à chaque affichage des cartes.
+    private readonly ToolTip _infobulle = new();
+
+    public void Dispose() => _infobulle.Dispose();
 
     public MoteurEquipes Moteur { get; set; } = new([], new Dictionary<string, string>());
 
@@ -53,6 +59,9 @@ internal sealed class CartesEquipes(Font police, Font gras)
 
     /// <summary>Indique qu'une équipe (ses héros, son rang) ne tient pas ses héros imposés ou bannis ; nul quand aucun critère ne s'applique.</summary>
     public Func<IReadOnlyList<int>, int, bool>? CriteresNonTenus { get; set; }
+
+    /// <summary>Motif pour lequel une équipe (son rang) n'a pas été générée ; nul quand elle l'est ou qu'aucun critère ne s'applique.</summary>
+    public Func<int, string?>? RaisonInactive { get; set; }
 
     public static string LibelleEtoiles(int valeur) => LibellesEtoiles.GetValueOrDefault(valeur, valeur.ToString(CultureInfo.InvariantCulture));
 
@@ -147,6 +156,10 @@ internal sealed class CartesEquipes(Font police, Font gras)
         var sousMinimum = (EstSousMinimum?.Invoke(evaluation, index) ?? false) || (CriteresNonTenus?.Invoke(ids, index) ?? false);
         var reglage = SurReglage is null ? null : BoutonReglage(() => SurReglage(index));
         AjouterLigne(carte, EnTete($"Équipe {index + 1}", $"{evaluation.Etoiles} points d'étoiles", sousMinimum ? TexteRouge : null, reglage), HauteurEnTete);
+        if (RaisonInactive?.Invoke(index) is { } raison)
+        {
+            AjouterLigne(carte, Pastille(LibelleInactive + raison, FondRouge, TexteRouge), 2 * HauteurPastille);
+        }
 
         var resonance = evaluation.Points > 0
             ? Pastille(evaluation.Description, FondVert, TexteVert)
@@ -195,6 +208,7 @@ internal sealed class CartesEquipes(Font police, Font gras)
             {
                 ContextMenuStrip = menu,
             };
+            _infobulle.SetToolTip(ligne, InfobulleHero.Texte(Heros[id], role));
             if (SurClic is not null)
             {
                 ligne.MouseClick += (_, e) =>

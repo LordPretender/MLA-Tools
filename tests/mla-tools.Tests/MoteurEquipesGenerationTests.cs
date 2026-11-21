@@ -21,6 +21,9 @@ public class MoteurEquipesGenerationTests
     private const int SeuilHeros = 4;
     private const int SeuilIntenable = 5;
     private const int MinimumEquipeCumule = 22;
+    // Seuls les héros 1, 5 et 12 ont 5 étoiles dans JeuVarie.
+    private const int HerosCinqEtoiles = 3;
+    private const string FactionInexistante = "Inexistante";
 
     // Le mode passe par son nom : ModeGeneration est internal, un paramètre de test public ne peut pas en porter le type.
     public static IEnumerable<object[]> Modes => Enum.GetNames<ModeGeneration>().Select(nom => new object[] { nom });
@@ -430,10 +433,10 @@ public class MoteurEquipesGenerationTests
         });
     }
 
-    // Le jeu n'a que trois héros à 5 étoiles : deux équipes ne peuvent pas toutes deux n'avoir que des héros à 5 étoiles.
+    // Le jeu n'a que trois héros à 5 étoiles : le seuil est une exclusion, les équipes restent incomplètes plutôt que de prendre un héros en dessous.
     [Theory]
     [MemberData(nameof(Modes))]
-    public void Un_seuil_par_heros_intenable_remonte_un_deficit_sans_bloquer(string nomMode)
+    public void Un_seuil_par_heros_intenable_laisse_les_equipes_incompletes(string nomMode)
     {
         var moteur = Moteur(JeuVarie());
         var criteres = new[] { Criteres(etoilesMiniHeros: SeuilIntenable), Criteres(etoilesMiniHeros: SeuilIntenable) };
@@ -441,7 +444,11 @@ public class MoteurEquipesGenerationTests
         var variantes = Variantes(moteur, 2, Enum.Parse<ModeGeneration>(nomMode), criteres: criteres);
 
         Assert.NotEmpty(variantes);
-        Assert.All(variantes, v => Assert.Contains(Enumerable.Range(0, 2), rang => criteres[rang].Ecarts(v.Equipes[rang], moteur.EtoilesDe) > 0));
+        Assert.All(variantes, v =>
+        {
+            Assert.All(v.Equipes.SelectMany(e => e), id => Assert.True(moteur.EtoilesDe(id) >= SeuilIntenable));
+            Assert.Equal(HerosCinqEtoiles, v.Equipes.Sum(e => e.Count));
+        });
     }
 
     [Theory]
@@ -492,16 +499,79 @@ public class MoteurEquipesGenerationTests
         Assert.Equal(0, criteres.Ecarts([1, 2], factionsDe: null));
     }
 
-    [Fact]
-    public void Une_faction_imposee_introuvable_ne_bloque_pas_la_generation()
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Une_faction_imposee_introuvable_desactive_son_equipe_et_genere_les_autres(string nomMode)
     {
         var moteur = Moteur(JeuVarie());
-        var criteres = new[] { Criteres(factionsImposees: ["Inexistante"]), CriteresEquipe.Aucun };
+        var criteres = new[] { Criteres(factionsImposees: [FactionInexistante]), CriteresEquipe.Aucun };
 
-        var variantes = Variantes(moteur, 2, ModeGeneration.SommeMaximale, criteres: criteres);
+        var variantes = Variantes(moteur, 2, Enum.Parse<ModeGeneration>(nomMode), criteres: criteres);
 
+        Assert.NotNull(moteur.RaisonInactive(criteres[0]));
         Assert.NotEmpty(variantes);
-        Assert.All(variantes, v => Assert.True(criteres[0].Ecarts(v.Equipes[0], factionsDe: moteur.FactionsDe) > 0));
+        Assert.All(variantes, v =>
+        {
+            Assert.Empty(v.Equipes[0]);
+            Assert.Equal(MoteurEquipes.TailleEquipe, v.Equipes[1].Count);
+        });
+    }
+
+    [Fact]
+    public void Un_heros_impose_et_banni_dans_la_meme_equipe_la_desactive()
+    {
+        var moteur = Moteur(JeuVarie());
+
+        Assert.NotNull(moteur.RaisonInactive(Criteres(imposes: [HeroFortA], bannis: [HeroFortA])));
+        Assert.NotNull(moteur.RaisonInactive(Criteres(imposes: [HeroFaible], etoilesMiniHeros: SeuilHeros)));
+        Assert.NotNull(moteur.RaisonInactive(Criteres(factionsImposees: [FactionX], factionsBannies: [FactionX])));
+        Assert.Null(moteur.RaisonInactive(Criteres(imposes: [HeroFortA], factionsImposees: [FactionX])));
+    }
+
+    // Toutes les factions du jeu sont bannies : aucun héros n'est autorisé, l'équipe reste vide au lieu de prendre un héros banni.
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Des_factions_toutes_bannies_laissent_l_equipe_vide(string nomMode)
+    {
+        var moteur = Moteur(JeuVarie());
+        var criteres = new[] { Criteres(factionsBannies: [FactionX, FactionY, FactionZ]), CriteresEquipe.Aucun };
+
+        var variantes = Variantes(moteur, 2, Enum.Parse<ModeGeneration>(nomMode), criteres: criteres);
+
+        Assert.All(variantes, v =>
+        {
+            Assert.Empty(v.Equipes[0]);
+            Assert.Equal(MoteurEquipes.TailleEquipe, v.Equipes[1].Count);
+        });
+    }
+
+    // Huit héros bannis sur douze : l'équipe se compose des quatre autres, sans compléter par un banni.
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Des_bannis_trop_nombreux_laissent_l_equipe_incomplete(string nomMode)
+    {
+        var moteur = Moteur(JeuVarie());
+        int[] bannis = [1, 2, 3, 4, 5, 6, 7, 8];
+
+        var variantes = Variantes(moteur, 1, Enum.Parse<ModeGeneration>(nomMode), criteres: [Criteres(bannis: bannis)]);
+
+        Assert.All(variantes, v =>
+        {
+            Assert.Equal(JeuVarie().Length - bannis.Length, v.Equipes[0].Count);
+            Assert.All(v.Equipes[0], id => Assert.DoesNotContain(id, bannis));
+        });
+    }
+
+    [Fact]
+    public void Interdit_couvre_le_banni_la_faction_bannie_et_le_seuil_d_etoiles()
+    {
+        var criteres = Criteres(bannis: [1], etoilesMiniHeros: SeuilHeros, factionsBannies: [FactionZ]);
+        IReadOnlyList<string> FactionsDeLHero(int id) => id == 3 ? [FactionZ] : [FactionX];
+
+        Assert.True(criteres.Interdit(1, _ => SeuilHeros, FactionsDeLHero));
+        Assert.True(criteres.Interdit(3, _ => SeuilHeros, FactionsDeLHero));
+        Assert.True(criteres.Interdit(2, _ => SeuilHeros - 1, FactionsDeLHero));
+        Assert.False(criteres.Interdit(2, _ => SeuilHeros, FactionsDeLHero));
     }
 
     [Theory]

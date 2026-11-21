@@ -176,6 +176,7 @@ internal sealed class FormEquipes : FormBase
             MenuEquipe = _menuEquipe,
             SurClic = Cliquer,
             EstSousMinimum = EstSousMinimum,
+            RaisonInactive = rang => _moteur.RaisonInactive(_reglages.Criteres(rang, _parId.ContainsKey)),
             CriteresNonTenus = (ids, rang) => _reglages.Criteres(rang, _parId.ContainsKey).Ecarts(ids, EtoilesDe, FactionsDe) > 0,
             SurReglage = ReglerEquipe,
         };
@@ -217,6 +218,7 @@ internal sealed class FormEquipes : FormBase
         {
             _police.Dispose();
             _gras.Dispose();
+            _cartes.Dispose();
             _menuHeros.Dispose();
             _menuEquipe.Dispose();
         }

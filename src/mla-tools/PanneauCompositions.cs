@@ -230,6 +230,7 @@ internal sealed class PanneauCompositions : UserControl
         if (disposing)
         {
             _menuEquipe.Dispose();
+            _cartes.Dispose();
         }
         base.Dispose(disposing);
     }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using FonctionCout = System.Func<System.Collections.Generic.List<MlaTools.EvaluationEquipe>, System.Collections.Generic.List<System.Collections.Generic.List<int>>, double>;
 
 namespace MlaTools;
@@ -42,6 +43,10 @@ internal sealed record CriteresEquipe(IReadOnlySet<int> Imposes, IReadOnlySet<in
     public int HerosDeFactionBannie(IReadOnlyCollection<int> equipe, Func<int, IReadOnlyList<string>> factionsDe) =>
         equipe.Count(id => factionsDe(id).Any(FactionsBannies.Contains));
 
+    /// <summary>Un héros interdit n'entre jamais dans l'équipe : banni, d'une faction bannie, ou sous le seuil d'étoiles par héros.</summary>
+    public bool Interdit(int id, Func<int, int> etoilesDe, Func<int, IReadOnlyList<string>> factionsDe) =>
+        Bannis.Contains(id) || factionsDe(id).Any(FactionsBannies.Contains) || (EtoilesMiniHeros > 0 && etoilesDe(id) < EtoilesMiniHeros);
+
     public IEnumerable<int> ImposesManquants(IReadOnlyCollection<int> equipe) => Imposes.Where(id => !equipe.Contains(id));
 
     public IEnumerable<int> BannisPresents(IReadOnlyCollection<int> equipe) => Bannis.Where(equipe.Contains);
@@ -75,6 +80,9 @@ internal sealed class MoteurEquipes
     public static readonly string[] Roles = [RoleDps, RoleTank, RoleSoutien];
 
     private const string DescriptionSansResonance = "Aucune résonance";
+    private const string RaisonHerosImposeIntrouvable = "un héros imposé est introuvable";
+    private const string RaisonHerosImposeInterdit = "un héros imposé est interdit dans cette équipe (banni, faction bannie ou étoiles insuffisantes)";
+    private const string RaisonFactionImposeeIntrouvable = "aucun héros autorisé ne porte la faction imposée {0}";
     private const string FactionOrdre = Referentiel.FactionOrdre;
     private const string FactionChaos = Referentiel.FactionChaos;
     private const int IndexDps = 0;
@@ -150,6 +158,30 @@ internal sealed class MoteurEquipes
     /// <summary>Factions telles que les critères les lisent : celles du héros, plus Ordre quand le lien d'âme le lui donne.</summary>
     public IReadOnlyList<string> FactionsDe(int heroId) => _infos[heroId].Factions;
 
+    /// <summary>Motif pour lequel une équipe n'est pas générée (un imposé qu'aucune composition valide ne peut tenir) ; nul quand elle l'est.</summary>
+    public string? RaisonInactive(CriteresEquipe criteres)
+    {
+        foreach (var id in criteres.Imposes)
+        {
+            if (!_infos.ContainsKey(id))
+            {
+                return RaisonHerosImposeIntrouvable;
+            }
+            if (criteres.Interdit(id, EtoilesDe, FactionsDe))
+            {
+                return RaisonHerosImposeInterdit;
+            }
+        }
+        foreach (var faction in criteres.FactionsImposees)
+        {
+            if (!_infos.Keys.Any(id => !criteres.Interdit(id, EtoilesDe, FactionsDe) && FactionsDe(id).Contains(faction)))
+            {
+                return string.Format(CultureInfo.CurrentCulture, RaisonFactionImposeeIntrouvable, faction);
+            }
+        }
+        return null;
+    }
+
     public EvaluationEquipe Evaluer(IReadOnlyList<int> ids)
     {
         var cle = string.Join(',', ids.Order());
@@ -175,8 +207,14 @@ internal sealed class MoteurEquipes
         criteres ??= [];
         _hasard = new Random(GraineParDefaut);
         _cache.Clear();
-        var depart = MeilleureEquipeDAbord(nombreEquipes, poids);
-        var cout = CoutDuMode(poids, mode, etoilesMinimum, criteres);
+        // Une équipe dont un imposé est intenable n'est pas générée : elle reste vide à son rang, les autres se composent sans elle.
+        var inactives = Enumerable.Range(0, Math.Min(nombreEquipes, criteres.Count)).Where(i => RaisonInactive(criteres[i]) is not null).ToHashSet();
+        var depart = MeilleureEquipeDAbord(nombreEquipes - inactives.Count, poids);
+        foreach (var rang in inactives.Order())
+        {
+            depart.Equipes.Insert(rang, []);
+        }
+        var cout = CoutDuMode(poids, mode, etoilesMinimum, criteres, inactives);
         var candidates = new Dictionary<string, (double Cout, RepartitionEquipes Repartition)>();
 
         for (var lancer = 0; lancer < nombreVariantes * FacteurRelances; lancer++)
@@ -188,6 +226,7 @@ internal sealed class MoteurEquipes
                 Brasser(equipes, reserve);
             }
             (equipes, reserve) = Affiner(equipes, reserve, cout, mode, etoilesMinimum, criteres, optimiserToujours: lancer > 0);
+            Respecter(equipes, reserve, criteres, inactives, poids);
             candidates.TryAdd(CleDeRepartition(equipes), (cout(equipes.Select(e => Evaluer(e)).ToList(), equipes), EnRepartition(equipes, reserve)));
         }
         return [.. candidates.Values.OrderBy(c => c.Cout).Take(nombreVariantes).Select(c => c.Repartition)];
@@ -457,13 +496,58 @@ internal sealed class MoteurEquipes
 
     // ---------- Optimisation par échanges (somme maximale, étoiles minimum) ----------
 
-    // Un héros imposé manquant, un banni présent, une faction imposée absente, un héros d'une faction bannie ou une étoile manquante sous le seuil d'un héros coûte autant qu'une étoile manquante à l'équipe : plus que n'importe quelle perte de score.
-    private FonctionCout CoutDuMode(PoidsEquipes poids, ModeGeneration mode, IReadOnlyList<int> etoilesMinimum, IReadOnlyList<CriteresEquipe> criteres)
+    // Un écart de critère (imposé manquant, banni présent, faction imposée absente, héros de faction bannie, étoiles sous le seuil) coûte plus que n'importe quelle perte de score :
+    // le coût guide la recherche vers zéro écart, et Respecter garantit ensuite les interdits.
+    // Les équipes inactives restent vides : leur score constant fausserait l'écart à la moyenne de la somme maximale, elles n'y comptent donc pas.
+    private FonctionCout CoutDuMode(PoidsEquipes poids, ModeGeneration mode, IReadOnlyList<int> etoilesMinimum, IReadOnlyList<CriteresEquipe> criteres, IReadOnlySet<int> inactives)
     {
         Func<List<EvaluationEquipe>, double> coutDuScore = mode == ModeGeneration.SommeMaximale
-            ? evaluations => Cout(evaluations, poids)
+            ? evaluations => Cout([.. evaluations.Where((_, rang) => !inactives.Contains(rang))], poids)
             : evaluations => CoutAvecMinimum(evaluations, poids, etoilesMinimum);
         return (evaluations, equipes) => coutDuScore(evaluations) + PoidsDeficit * EcartsDeCriteres(equipes, evaluations.Count, criteres);
+    }
+
+    // Le coût écarte les interdits quand c'est possible ; ce passage garantit la règle quand ça ne l'est pas : l'interdit part en réserve et l'équipe reste incomplète
+    // si aucun héros autorisé ne peut la compléter.
+    private void Respecter(List<List<int>> equipes, List<int> reserve, IReadOnlyList<CriteresEquipe> criteres, IReadOnlySet<int> inactives, PoidsEquipes poids)
+    {
+        var allegees = new List<int>();
+        for (var rang = 0; rang < Math.Min(equipes.Count, criteres.Count); rang++)
+        {
+            var interdits = equipes[rang].Where(id => criteres[rang].Interdit(id, EtoilesDe, FactionsDe)).ToList();
+            if (interdits.Count > 0)
+            {
+                equipes[rang].RemoveAll(interdits.Contains);
+                reserve.AddRange(interdits);
+                allegees.Add(rang);
+            }
+        }
+        foreach (var rang in allegees.Where(r => !inactives.Contains(r)))
+        {
+            Completer(equipes, reserve, rang, criteres, poids);
+        }
+    }
+
+    private void Completer(List<List<int>> equipes, List<int> reserve, int rang, IReadOnlyList<CriteresEquipe> criteres, PoidsEquipes poids)
+    {
+        var equipe = equipes[rang];
+        while (equipe.Count < TailleEquipe)
+        {
+            var famillesPrises = equipes.SelectMany(e => e).Select(id => _infos[id].Famille).ToHashSet();
+            var candidats = reserve
+                .Where(id => !criteres[rang].Interdit(id, EtoilesDe, FactionsDe)
+                    && !criteres.Where((_, autre) => autre != rang).Any(c => c.Imposes.Contains(id))
+                    && !(_famillesPartagees && famillesPrises.Contains(_infos[id].Famille)))
+                .Select(id => (Id: id, Score: Score(Evaluer([.. equipe, id]), poids)))
+                .OrderByDescending(c => c.Score).ThenBy(c => c.Id)
+                .ToList();
+            if (candidats.Count == 0)
+            {
+                return;
+            }
+            equipe.Add(candidats[0].Id);
+            reserve.Remove(candidats[0].Id);
+        }
     }
 
     // equipes peut porter la réserve en dernier : seules les nombreEquipes premières listes sont des équipes.
