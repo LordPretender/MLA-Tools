@@ -47,6 +47,29 @@ public class ReglagesEquipesTests
     }
 
     [Fact]
+    public void Tout_reinitialiser_vide_chaque_equipe_mais_garde_le_seuil_global()
+    {
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = SeuilGlobal };
+        reglages.Imposer(PremiereEquipe, Heros);
+        reglages.Bannir(SecondeEquipe, Heros);
+        reglages.FixerEtoilesMiniHeros(PremiereEquipe, SeuilHeros);
+        reglages.ImposerFaction(PremiereEquipe, FactionA);
+        reglages.BannirFaction(SecondeEquipe, FactionB);
+
+        reglages.ReinitialiserToutes();
+
+        for (var equipe = PremiereEquipe; equipe < NombreEquipes; equipe++)
+        {
+            Assert.Empty(reglages.Imposes(equipe));
+            Assert.Empty(reglages.Bannis(equipe));
+            Assert.Equal(0, reglages.EtoilesMiniHeros(equipe));
+            Assert.Empty(reglages.FactionsImposees(equipe));
+            Assert.Empty(reglages.FactionsBannies(equipe));
+        }
+        Assert.Equal(SeuilGlobal, reglages.EtoilesMiniHerosGlobal);
+    }
+
+    [Fact]
     public void La_reinitialisation_ne_touche_que_son_equipe()
     {
         var reglages = new ReglagesEquipes();

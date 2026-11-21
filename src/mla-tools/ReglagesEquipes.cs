@@ -106,6 +106,16 @@ internal sealed class ReglagesEquipes
         _factionsBannies.Remove(equipe);
     }
 
+    /// <summary>Vide les réglages de toutes les équipes ; le seuil global, qui n'appartient à aucune équipe, reste.</summary>
+    public void ReinitialiserToutes()
+    {
+        _imposes.Clear();
+        _bannis.Clear();
+        _etoilesMiniHeros.Clear();
+        _factionsImposees.Clear();
+        _factionsBannies.Clear();
+    }
+
     /// <summary>Critères d'une équipe ; un héros qui n'existe plus (existe faux) est ignoré.</summary>
     public CriteresEquipe Criteres(int equipe, Func<int, bool> existe) =>
         new(Lire(_imposes, equipe).Where(existe).ToHashSet(), Lire(_bannis, equipe).Where(existe).ToHashSet(), EtoilesMiniHerosEffectif(equipe))

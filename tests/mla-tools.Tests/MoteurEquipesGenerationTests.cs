@@ -45,6 +45,19 @@ public class MoteurEquipesGenerationTests
     public void Valeur_chaos_cumule_les_paliers_sans_depasser_le_troisieme(int chaos, double attendu) =>
         Assert.Equal(attendu, Poids.ValeurChaos(chaos));
 
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Une_seule_equipe_donne_toujours_meilleure_equipe_d_abord(string nomMode) =>
+        Assert.Equal(ModeGeneration.MeilleureEquipeDAbord, MoteurEquipes.ModeEffectif(Enum.Parse<ModeGeneration>(nomMode), 1));
+
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Plusieurs_equipes_gardent_le_mode_choisi(string nomMode)
+    {
+        var mode = Enum.Parse<ModeGeneration>(nomMode);
+        Assert.Equal(mode, MoteurEquipes.ModeEffectif(mode, 2));
+    }
+
     private static double ScoreEquipe(MoteurEquipes moteur, IReadOnlyList<int> equipe) => Score(moteur.Evaluer(equipe));
 
     private static double SommeDesScores(MoteurEquipes moteur, RepartitionEquipes repartition) =>

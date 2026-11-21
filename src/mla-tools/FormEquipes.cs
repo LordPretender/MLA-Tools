@@ -90,6 +90,7 @@ internal sealed class FormEquipes : FormBase
 
     private readonly ComboBox _filtreLienAme = NouveauFiltre();
 
+    private readonly Label _libelleMode = new() { Text = "Mode", AutoSize = true, Margin = new Padding(16, 6, 6, 0) };
     private readonly ComboBox _choixMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 230 };
 
     private readonly ToolStripMenuItem _menuModifier = new("Modifier…") { ShortcutKeys = Keys.F2 };
@@ -370,7 +371,11 @@ internal sealed class FormEquipes : FormBase
         generer.Click += (_, _) => GenererEquipes();
         var enregistrer = new Button { Text = "Enregistrer la composition", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
         enregistrer.Click += (_, _) => EnregistrerComposition();
-        _nombreEquipes.ValueChanged += (_, _) => AfficherCartes();
+        _nombreEquipes.ValueChanged += (_, _) =>
+        {
+            AfficherChoixMode();
+            AfficherCartes();
+        };
         _choixMode.Items.AddRange(FormOptionsGeneration.LibellesModes);
         _choixMode.SelectedIndex = (int)_mode;
         _choixMode.SelectedIndexChanged += (_, _) => ChangerMode();
@@ -380,8 +385,9 @@ internal sealed class FormEquipes : FormBase
         barre.Controls.Add(_nombreEquipes);
         barre.Controls.Add(new Label { Text = "Variantes", AutoSize = true, Margin = new Padding(16, 6, 6, 0) });
         barre.Controls.Add(_nombreVariantes);
-        barre.Controls.Add(new Label { Text = "Mode", AutoSize = true, Margin = new Padding(16, 6, 6, 0) });
+        barre.Controls.Add(_libelleMode);
         barre.Controls.Add(_choixMode);
+        AfficherChoixMode();
         barre.Controls.Add(generer);
         barre.Controls.Add(enregistrer);
 
@@ -529,6 +535,7 @@ internal sealed class FormEquipes : FormBase
         _etoilesMinimum = LireMinimums(parametres);
         _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis), parametres.GetValueOrDefault(CleEtoilesMiniHeros), (int)Math.Clamp(Lire(parametres, CleEtoilesMiniHerosGlobal, 0), 0, FormOptionsGeneration.EtoilesMinimumMax), parametres.GetValueOrDefault(CleFactionsImposees), parametres.GetValueOrDefault(CleFactionsBannies));
         AfficherMode();
+        AfficherChoixMode();
     }
 
     // Valeur absente : on garde les minimums courants ; valeur illisible ou hors bornes : 0 pour l'équipe concernée.
@@ -699,12 +706,22 @@ internal sealed class FormEquipes : FormBase
         _modeEnMiseAJour = false;
     }
 
+    // Le _mode choisi reste intact et persisté : il revient quand on repasse à plusieurs équipes.
+    private void AfficherChoixMode()
+    {
+        var visible = (int)_nombreEquipes.Value > 1;
+        _libelleMode.Visible = visible;
+        _choixMode.Visible = visible;
+    }
+
+    private ModeGeneration ModeEffectif => MoteurEquipes.ModeEffectif(_mode, (int)_nombreEquipes.Value);
+
     private int Minimum(int equipe) => equipe < _etoilesMinimum.Count ? _etoilesMinimum[equipe] : 0;
 
     // Minimums et critères vivent dans _etoilesMinimum et _reglages : rien ne se perd quand le nombre d'équipes change, ni pour une carte vide.
     private void ReglerEquipe(int equipe)
     {
-        int? minimum = _mode == ModeGeneration.MeilleureEquipeDAbord ? Minimum(equipe) : null;
+        int? minimum = ModeEffectif == ModeGeneration.MeilleureEquipeDAbord ? Minimum(equipe) : null;
         using var dialogue = new FormReglageEquipe(equipe, minimum, _reglages, _heros);
         if (dialogue.ShowDialog(this) == DialogResult.OK)
         {
@@ -844,16 +861,25 @@ internal sealed class FormEquipes : FormBase
         }
 
         var ancien = _poids;
-        var ancienSeuil = _reglages.EtoilesMiniHerosGlobal;
+        var anciensReglages = _reglages.Copier();
+        var anciensMinimums = _etoilesMinimum.ToList();
+        var modifie = dialogue.Poids != _poids || dialogue.EtoilesMiniHeros != _reglages.EtoilesMiniHerosGlobal;
         _poids = dialogue.Poids;
         _reglages.EtoilesMiniHerosGlobal = dialogue.EtoilesMiniHeros;
+        if (modifie)
+        {
+            // Changer les options démarre une nouvelle composition : les réglages de chaque équipe repartent de zéro.
+            _reglages.ReinitialiserToutes();
+            _etoilesMinimum.Clear();
+        }
         if (!Proteger(SauvegarderParametres))
         {
             _poids = ancien;
-            _reglages.EtoilesMiniHerosGlobal = ancienSeuil;
+            _reglages = anciensReglages;
+            _etoilesMinimum = anciensMinimums;
             return;
         }
-        // Le seuil global change ce que les cartes signalent comme non tenu.
+        // Le seuil global et la réinitialisation changent ce que les cartes signalent comme non tenu.
         AfficherCartes();
     }
 
@@ -896,7 +922,7 @@ internal sealed class FormEquipes : FormBase
         Cursor = Cursors.WaitCursor;
         try
         {
-            _variantes = [.. _moteur.GenererVariantes(nombre, _poids, _mode, _etoilesMinimum, (int)_nombreVariantes.Value, Criteres(nombre))];
+            _variantes = [.. _moteur.GenererVariantes(nombre, _poids, MoteurEquipes.ModeEffectif(_mode, nombre), _etoilesMinimum, (int)_nombreVariantes.Value, Criteres(nombre))];
             _nombreEquipesPersiste = nombre;
             RemplirVariantes();
             AppliquerVariante(0);
@@ -955,7 +981,7 @@ internal sealed class FormEquipes : FormBase
     }
 
     private bool EstSousMinimum(EvaluationEquipe evaluation, int equipe) =>
-        _mode == ModeGeneration.MeilleureEquipeDAbord && evaluation.Etoiles < Minimum(equipe);
+        ModeEffectif == ModeGeneration.MeilleureEquipeDAbord && evaluation.Etoiles < Minimum(equipe);
 
     private List<int> Trier(IEnumerable<int> ids) => [.. ids.OrderByDescending(id => _parId[id].Hero.Etoiles)];
 

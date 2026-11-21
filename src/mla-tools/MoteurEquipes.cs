@@ -80,6 +80,10 @@ internal sealed class MoteurEquipes
     public const string RoleSoutien = "Soutien";
     public const int NombreEquipesParDefaut = 2;
 
+    /// <summary>Avec une seule équipe, il n'y a rien à répartir : le mode choisi n'a plus d'effet et seul « Meilleure équipe d'abord » a un sens.</summary>
+    public static ModeGeneration ModeEffectif(ModeGeneration mode, int nombreEquipes) =>
+        nombreEquipes == 1 ? ModeGeneration.MeilleureEquipeDAbord : mode;
+
     public static readonly string[] Roles = [RoleDps, RoleTank, RoleSoutien];
 
     private const string DescriptionSansResonance = "Aucune résonance";
