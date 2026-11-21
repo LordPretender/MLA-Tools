@@ -96,14 +96,22 @@ public class MoteurEquipesEvaluationTests
     }
 
     [Fact]
-    public void Heros_chaos_et_faction_compte_pour_sa_faction_sans_suffixe()
+    public void Heros_chaos_et_faction_ne_resonne_pas_car_le_chaos_l_emporte()
     {
         HeroMoteur[] equipe = [.. Enumerable.Range(1, 3).Select(id => Hero(id, ClasseDps, [Referentiel.FactionChaos, FactionX]))];
 
         var evaluation = EvaluerEquipe(equipe);
 
-        Assert.Equal(PointsPour25, evaluation.Points);
-        Assert.Equal($"3× {FactionX} — {BonusPour25}", evaluation.Description);
+        Assert.Equal(0, evaluation.Points);
+        Assert.Equal($"{DescriptionSansResonance} (+3 Chaos : bonus aux alliés)", evaluation.Description);
+    }
+
+    [Fact]
+    public void Heros_chaos_et_ordre_n_est_pas_un_joker()
+    {
+        HeroMoteur[] equipe = [.. Heros(2, ClasseDps, FactionX), Hero(100, ClasseDps, [Referentiel.FactionChaos, Referentiel.FactionOrdre])];
+
+        Assert.Equal(0, EvaluerEquipe(equipe).Points);
     }
 
     public static IEnumerable<object[]> FactionsRegulieres => Referentiel.FactionsRegulieres.Select(faction => new object[] { faction });

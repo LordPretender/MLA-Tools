@@ -163,12 +163,12 @@ internal sealed class MoteurEquipes
         var tankSecondaire = !estTank && equipement == Referentiel.EquipementLourd;
         var moyen = !estTank && equipement == Referentiel.EquipementMoyen;
 
-        // Chaos pur : sans autre faction, le héros ne résonne pas mais donne un bonus aux alliés.
-        var factions = hero.Factions.Where(f => f != FactionChaos).ToList();
-        if (factions.Count == 0)
+        // Le Chaos l'emporte sur toute autre faction : le héros ne résonne pas mais donne un bonus aux alliés.
+        if (hero.Factions.Contains(FactionChaos))
         {
             return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, [], 0, true, tankSecondaire, moyen, equipement, famille);
         }
+        var factions = hero.Factions.ToList();
         if (factions.Contains(FactionOrdre))
         {
             factions = [.. factions.Where(f => f != FactionOrdre).Concat(FactionsRegulieres).Distinct()];
