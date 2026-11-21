@@ -1,4 +1,4 @@
-using FonctionCout = System.Func<System.Collections.Generic.List<MlaTools.EvaluationEquipe>, double>;
+using FonctionCout = System.Func<System.Collections.Generic.List<MlaTools.EvaluationEquipe>, System.Collections.Generic.List<System.Collections.Generic.List<int>>, double>;
 
 namespace MlaTools;
 
@@ -21,6 +21,20 @@ internal enum ModeGeneration
 }
 
 internal sealed record EvaluationEquipe(int Dps, int Tanks, int TanksSecondaires, int Soutiens, int Etoiles, int PenaliteRoles, int Points, string Description, int Chaos = 0);
+
+/// <summary>Héros imposés et bannis d'une équipe ; contrainte dure, tenue avant tout score.</summary>
+internal sealed record CriteresEquipe(IReadOnlySet<int> Imposes, IReadOnlySet<int> Bannis)
+{
+    public static readonly CriteresEquipe Aucun = new(new HashSet<int>(), new HashSet<int>());
+
+    public bool EstVide => Imposes.Count == 0 && Bannis.Count == 0;
+
+    public IEnumerable<int> ImposesManquants(IReadOnlyCollection<int> equipe) => Imposes.Where(id => !equipe.Contains(id));
+
+    public IEnumerable<int> BannisPresents(IReadOnlyCollection<int> equipe) => Bannis.Where(equipe.Contains);
+
+    public int Ecarts(IReadOnlyCollection<int> equipe) => ImposesManquants(equipe).Count() + BannisPresents(equipe).Count();
+}
 
 internal sealed record RepartitionEquipes(IReadOnlyList<IReadOnlyList<int>> Equipes, IReadOnlyList<int> Reserve);
 
@@ -125,15 +139,17 @@ internal sealed class MoteurEquipes
     }
 
     // Un minimum d'étoiles par équipe (rang = index) ne vaut que pour « meilleure équipe d'abord » ; 0 ou une équipe hors liste = aucun minimum.
+    // Les critères (héros imposés ou bannis, même rang) valent pour les deux modes ; une équipe hors liste n'a aucun critère.
     // La première variante est la répartition sans brassage ; les suivantes repartent d'un départ brassé, car la recherche gloutonne est déterministe
     // et ne donnerait sinon qu'une seule répartition. Le hasard est réinitialisé pour que deux appels identiques donnent la même liste.
     public IReadOnlyList<RepartitionEquipes> GenererVariantes(
-        int nombreEquipes, PoidsEquipes poids, ModeGeneration mode, IReadOnlyList<int> etoilesMinimum, int nombreVariantes)
+        int nombreEquipes, PoidsEquipes poids, ModeGeneration mode, IReadOnlyList<int> etoilesMinimum, int nombreVariantes, IReadOnlyList<CriteresEquipe>? criteres = null)
     {
+        criteres ??= [];
         _hasard = new Random(GraineParDefaut);
         _cache.Clear();
         var depart = MeilleureEquipeDAbord(nombreEquipes, poids);
-        var cout = CoutDuMode(poids, mode, etoilesMinimum);
+        var cout = CoutDuMode(poids, mode, etoilesMinimum, criteres);
         var candidates = new Dictionary<string, (double Cout, RepartitionEquipes Repartition)>();
 
         for (var lancer = 0; lancer < nombreVariantes * FacteurRelances; lancer++)
@@ -144,8 +160,8 @@ internal sealed class MoteurEquipes
             {
                 Brasser(equipes, reserve);
             }
-            (equipes, reserve) = Affiner(equipes, reserve, poids, mode, etoilesMinimum, optimiserToujours: lancer > 0);
-            candidates.TryAdd(CleDeRepartition(equipes), (cout(equipes.Select(e => Evaluer(e)).ToList()), EnRepartition(equipes, reserve)));
+            (equipes, reserve) = Affiner(equipes, reserve, cout, mode, etoilesMinimum, criteres, optimiserToujours: lancer > 0);
+            candidates.TryAdd(CleDeRepartition(equipes), (cout(equipes.Select(e => Evaluer(e)).ToList(), equipes), EnRepartition(equipes, reserve)));
         }
         return [.. candidates.Values.OrderBy(c => c.Cout).Take(nombreVariantes).Select(c => c.Repartition)];
     }
@@ -410,20 +426,35 @@ internal sealed class MoteurEquipes
 
     // ---------- Optimisation par échanges (somme maximale, étoiles minimum) ----------
 
-    private static FonctionCout CoutDuMode(PoidsEquipes poids, ModeGeneration mode, IReadOnlyList<int> etoilesMinimum) =>
-        mode == ModeGeneration.SommeMaximale
+    // Un héros imposé manquant ou banni présent coûte autant qu'un point d'étoiles manquant : plus que n'importe quelle perte de score.
+    private static FonctionCout CoutDuMode(PoidsEquipes poids, ModeGeneration mode, IReadOnlyList<int> etoilesMinimum, IReadOnlyList<CriteresEquipe> criteres)
+    {
+        Func<List<EvaluationEquipe>, double> coutDuScore = mode == ModeGeneration.SommeMaximale
             ? evaluations => Cout(evaluations, poids)
             : evaluations => CoutAvecMinimum(evaluations, poids, etoilesMinimum);
+        return (evaluations, equipes) => coutDuScore(evaluations) + PoidsDeficit * EcartsDeCriteres(equipes, evaluations.Count, criteres);
+    }
+
+    // equipes peut porter la réserve en dernier : seules les nombreEquipes premières listes sont des équipes.
+    private static int EcartsDeCriteres(List<List<int>> equipes, int nombreEquipes, IReadOnlyList<CriteresEquipe> criteres)
+    {
+        var ecarts = 0;
+        for (var i = 0; i < nombreEquipes && i < criteres.Count; i++)
+        {
+            ecarts += criteres[i].Ecarts(equipes[i]);
+        }
+        return ecarts;
+    }
 
     // Sans minimum, « meilleure équipe d'abord » n'optimise pas : optimiserToujours force le recuit pour les variantes brassées.
     private (List<List<int>> Equipes, List<int> Reserve) Affiner(
-        List<List<int>> equipes, List<int> reserve, PoidsEquipes poids, ModeGeneration mode, IReadOnlyList<int> etoilesMinimum, bool optimiserToujours)
+        List<List<int>> equipes, List<int> reserve, FonctionCout cout, ModeGeneration mode, IReadOnlyList<int> etoilesMinimum, IReadOnlyList<CriteresEquipe> criteres, bool optimiserToujours)
     {
-        if (mode != ModeGeneration.SommeMaximale && !optimiserToujours && !etoilesMinimum.Any(m => m > 0))
+        if (mode != ModeGeneration.SommeMaximale && !optimiserToujours && !etoilesMinimum.Any(m => m > 0) && criteres.All(c => c.EstVide))
         {
             return (equipes, reserve);
         }
-        return Optimiser(equipes, reserve, CoutDuMode(poids, mode, etoilesMinimum));
+        return Optimiser(equipes, reserve, cout);
     }
 
     private void Brasser(List<List<int>> equipes, List<int> reserve)
@@ -478,7 +509,7 @@ internal sealed class MoteurEquipes
     private (List<List<int>> Equipes, List<int> Reserve) Optimiser(List<List<int>> equipes, List<int> reserve, FonctionCout cout)
     {
         // Le départ est le résultat du mode précédent : le coût ne peut que baisser.
-        var meilleure = (Cout: cout(equipes.Select(e => Evaluer(e)).ToList()), Equipes: equipes, Reserve: reserve);
+        var meilleure = (Cout: cout(equipes.Select(e => Evaluer(e)).ToList(), equipes), Equipes: equipes, Reserve: reserve);
         for (var execution = 0; execution < NombreExecutions; execution++)
         {
             var resultat = Recuire(Copier(meilleure.Equipes), meilleure.Reserve.ToList(), cout);
@@ -523,7 +554,7 @@ internal sealed class MoteurEquipes
         var listes = new List<List<int>>(equipes) { reserve };
         var nombreEquipes = equipes.Count;
         var evaluations = equipes.Select(e => Evaluer(e)).ToList();
-        var courant = cout(evaluations);
+        var courant = cout(evaluations, equipes);
         var meilleur = courant;
         var meilleuresEquipes = Copier(equipes);
         var meilleureReserve = reserve.ToList();
@@ -545,7 +576,7 @@ internal sealed class MoteurEquipes
             if (a < nombreEquipes) evaluations[a] = Evaluer(listes[a]);
             if (b < nombreEquipes) evaluations[b] = Evaluer(listes[b]);
 
-            var nouveau = cout(evaluations);
+            var nouveau = cout(evaluations, equipes);
             var ecart = nouveau - courant;
             if (ecart <= 0 || _hasard.NextDouble() < Math.Exp(-ecart / temperature))
             {
@@ -572,7 +603,7 @@ internal sealed class MoteurEquipes
     {
         var listes = new List<List<int>>(equipes) { reserve };
         var evaluations = equipes.Select(e => Evaluer(e)).ToList();
-        var courant = cout(evaluations);
+        var courant = cout(evaluations, equipes);
 
         var ameliore = true;
         while (ameliore)
@@ -616,7 +647,7 @@ internal sealed class MoteurEquipes
         evaluations[a] = Evaluer(listes[a]);
         if (ancienneB is not null) evaluations[b] = Evaluer(listes[b]);
 
-        var nouveau = cout(evaluations);
+        var nouveau = cout(evaluations, listes);
         if (nouveau < courant - 1e-9)
         {
             courant = nouveau;

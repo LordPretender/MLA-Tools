@@ -32,6 +32,8 @@ internal sealed class FormEquipes : FormBase
     private const string CleMode = "mode_generation";
     private const string CleEtoilesMinimum = "etoiles_min";
     private const char SeparateurMinimums = ',';
+    private const string CleHerosImposes = "heros_imposes";
+    private const string CleHerosBannis = "heros_bannis";
     private const string CleVariantes = "variantes";
     private const int VariantesParDefaut = 5;
     private const int VariantesMax = 20;
@@ -136,6 +138,7 @@ internal sealed class FormEquipes : FormBase
     private ModeGeneration _mode = ModeGeneration.MeilleureEquipeDAbord;
     // Un minimum par équipe, rang = index ; peut dépasser le nombre d'équipes affichées pour garder les valeurs si on en retire.
     private List<int> _etoilesMinimum = [];
+    private ReglagesEquipes _reglages = new();
     private List<List<int>> _equipes = [];
     private List<int> _reserve = [];
     // Variantes de la dernière génération, telles que produites : les échanges manuels ne portent que sur la variante affichée.
@@ -169,6 +172,7 @@ internal sealed class FormEquipes : FormBase
             MenuEquipe = _menuEquipe,
             SurClic = Cliquer,
             EstSousMinimum = EstSousMinimum,
+            CriteresNonTenus = (ids, rang) => _reglages.Criteres(rang, _parId.ContainsKey).Ecarts(ids) > 0,
             SurReglage = ReglerEquipe,
         };
         Font = _police;
@@ -517,6 +521,7 @@ internal sealed class FormEquipes : FormBase
             ? ModeGeneration.SommeMaximale
             : ModeGeneration.MeilleureEquipeDAbord;
         _etoilesMinimum = LireMinimums(parametres);
+        _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis));
         AfficherMode();
     }
 
@@ -690,33 +695,40 @@ internal sealed class FormEquipes : FormBase
 
     private int Minimum(int equipe) => equipe < _etoilesMinimum.Count ? _etoilesMinimum[equipe] : 0;
 
-    // Les minimums vivent dans _etoilesMinimum : rien ne se perd quand le nombre d'équipes change, ni pour une carte vide.
+    // Minimums et critères vivent dans _etoilesMinimum et _reglages : rien ne se perd quand le nombre d'équipes change, ni pour une carte vide.
     private void ReglerEquipe(int equipe)
     {
         int? minimum = _mode == ModeGeneration.MeilleureEquipeDAbord ? Minimum(equipe) : null;
-        using var dialogue = new FormReglageEquipe(equipe, minimum);
-        if (dialogue.ShowDialog(this) == DialogResult.OK && dialogue.EtoilesMinimum is { } valeur)
+        using var dialogue = new FormReglageEquipe(equipe, minimum, _reglages, _heros);
+        if (dialogue.ShowDialog(this) == DialogResult.OK)
         {
-            ChangerMinimum(equipe, valeur);
+            ChangerReglages(equipe, dialogue.EtoilesMinimum, dialogue.Reglages);
         }
     }
 
-    private void ChangerMinimum(int equipe, int valeur)
+    private void ChangerReglages(int equipe, int? minimum, ReglagesEquipes reglages)
     {
-        while (_etoilesMinimum.Count <= equipe)
+        var anciensReglages = _reglages;
+        var ancienMinimum = _etoilesMinimum.ToList();
+        _reglages = reglages;
+        if (minimum is { } valeur)
         {
-            _etoilesMinimum.Add(0);
+            while (_etoilesMinimum.Count <= equipe)
+            {
+                _etoilesMinimum.Add(0);
+            }
+            _etoilesMinimum[equipe] = valeur;
         }
-
-        var ancien = _etoilesMinimum[equipe];
-        _etoilesMinimum[equipe] = valeur;
         if (!Proteger(SauvegarderParametres))
         {
-            _etoilesMinimum[equipe] = ancien;
+            _reglages = anciensReglages;
+            _etoilesMinimum = ancienMinimum;
             return;
         }
         AfficherCartes();
     }
+
+    private IReadOnlyList<CriteresEquipe> Criteres(int nombreEquipes) => _reglages.Pour(nombreEquipes, _parId.ContainsKey);
 
     // Les listes se reconstruisent depuis la base : une classe ou une faction n'existe que si un héros la porte.
     private void ActualiserFiltres()
@@ -868,7 +880,7 @@ internal sealed class FormEquipes : FormBase
         Cursor = Cursors.WaitCursor;
         try
         {
-            _variantes = [.. _moteur.GenererVariantes(nombre, _poids, _mode, _etoilesMinimum, (int)_nombreVariantes.Value)];
+            _variantes = [.. _moteur.GenererVariantes(nombre, _poids, _mode, _etoilesMinimum, (int)_nombreVariantes.Value, Criteres(nombre))];
             _nombreEquipesPersiste = nombre;
             RemplirVariantes();
             AppliquerVariante(0);
@@ -921,7 +933,8 @@ internal sealed class FormEquipes : FormBase
     private string LibelleVariante(int index)
     {
         var evaluations = _variantes[index].Equipes.Select(e => _moteur.Evaluer(e)).ToList();
-        var alerte = evaluations.Select((e, rang) => e.PenaliteRoles > 0 || EstSousMinimum(e, rang)).Any(a => a);
+        var criteres = Criteres(evaluations.Count);
+        var alerte = evaluations.Select((e, rang) => e.PenaliteRoles > 0 || EstSousMinimum(e, rang) || criteres[rang].Ecarts(_variantes[index].Equipes[rang]) > 0).Any(a => a);
         return $"{index + 1} · {string.Join(SeparateurPoints, evaluations.Select(e => e.Etoiles))}{(alerte ? SigneAlerte : string.Empty)}";
     }
 
@@ -976,6 +989,8 @@ internal sealed class FormEquipes : FormBase
             BaseSqlite.EcrireParametre(cle, valeur.ToString(CultureInfo.InvariantCulture), _chemin);
         }
         BaseSqlite.EcrireParametre(CleEtoilesMinimum, string.Join(SeparateurMinimums, _etoilesMinimum), _chemin);
+        BaseSqlite.EcrireParametre(CleHerosImposes, _reglages.SerialiserImposes(), _chemin);
+        BaseSqlite.EcrireParametre(CleHerosBannis, _reglages.SerialiserBannis(), _chemin);
         BaseSqlite.EcrireParametre(CleListeVariantes, SerialiserVariantes(_variantes), _chemin);
     }
 

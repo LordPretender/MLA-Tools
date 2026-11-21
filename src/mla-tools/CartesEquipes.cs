@@ -51,6 +51,9 @@ internal sealed class CartesEquipes(Font police, Font gras)
     /// <summary>Indique qu'une équipe est sous son minimum d'étoiles ; nul quand aucun minimum ne s'applique.</summary>
     public Func<EvaluationEquipe, int, bool>? EstSousMinimum { get; set; }
 
+    /// <summary>Indique qu'une équipe (ses héros, son rang) ne tient pas ses héros imposés ou bannis ; nul quand aucun critère ne s'applique.</summary>
+    public Func<IReadOnlyList<int>, int, bool>? CriteresNonTenus { get; set; }
+
     public static string LibelleEtoiles(int valeur) => LibellesEtoiles.GetValueOrDefault(valeur, valeur.ToString(CultureInfo.InvariantCulture));
 
     public static Color CouleurRole(string role) => role switch
@@ -141,7 +144,7 @@ internal sealed class CartesEquipes(Font police, Font gras)
     {
         var evaluation = Moteur.Evaluer(ids);
         var carte = NouvelleCarte();
-        var sousMinimum = EstSousMinimum?.Invoke(evaluation, index) ?? false;
+        var sousMinimum = (EstSousMinimum?.Invoke(evaluation, index) ?? false) || (CriteresNonTenus?.Invoke(ids, index) ?? false);
         var reglage = SurReglage is null ? null : BoutonReglage(() => SurReglage(index));
         AjouterLigne(carte, EnTete($"Équipe {index + 1}", $"{evaluation.Etoiles} points d'étoiles", sousMinimum ? TexteRouge : null, reglage), HauteurEnTete);
 

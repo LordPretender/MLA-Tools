@@ -14,6 +14,10 @@ public class MoteurEquipesGenerationTests
     private const int IdAutreType = 5;
     // Assez grand pour que chaque famille ainsi numérotée diffère de tous les identifiants de héros du jeu de test.
     private const int DecalageFamilleDistincte = 100;
+    // Dans JeuVarie : un héros faible (1 étoile) que le score n'enverrait pas en première équipe, et deux héros forts qu'il y mettrait.
+    private const int HeroFaible = 6;
+    private const int HeroFortA = 1;
+    private const int HeroFortB = 5;
 
     // Le mode passe par son nom : ModeGeneration est internal, un paramètre de test public ne peut pas en porter le type.
     public static IEnumerable<object[]> Modes => Enum.GetNames<ModeGeneration>().Select(nom => new object[] { nom });
@@ -41,8 +45,12 @@ public class MoteurEquipesGenerationTests
         repartition.Equipes.Sum(e => ScoreEquipe(moteur, e));
 
     private static IReadOnlyList<RepartitionEquipes> Variantes(
-        MoteurEquipes moteur, int nombreEquipes, ModeGeneration mode, int nombreVariantes = NombreVariantes, IReadOnlyList<int>? etoilesMinimum = null) =>
-        moteur.GenererVariantes(nombreEquipes, Poids, mode, etoilesMinimum ?? SansMinimum, nombreVariantes);
+        MoteurEquipes moteur, int nombreEquipes, ModeGeneration mode, int nombreVariantes = NombreVariantes, IReadOnlyList<int>? etoilesMinimum = null,
+        IReadOnlyList<CriteresEquipe>? criteres = null) =>
+        moteur.GenererVariantes(nombreEquipes, Poids, mode, etoilesMinimum ?? SansMinimum, nombreVariantes, criteres);
+
+    private static CriteresEquipe Criteres(int[]? imposes = null, int[]? bannis = null) =>
+        new((imposes ?? []).ToHashSet(), (bannis ?? []).ToHashSet());
 
     // Douze héros variés : trois rôles, deux équipements, des factions qui se recoupent, des étoiles de 1 à 5.
     private static HeroMoteur[] JeuVarie() =>
@@ -317,5 +325,64 @@ public class MoteurEquipesGenerationTests
         var trouvee = Variantes(moteur, 1, ModeGeneration.MeilleureEquipeDAbord, ReferenceSansVariante)[0].Equipes[0];
 
         Assert.Equal(MeilleurScoreExhaustif(moteur, [.. heros.Select(h => h.Id)]), ScoreEquipe(moteur, trouvee));
+    }
+
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Un_heros_impose_se_retrouve_dans_la_bonne_equipe(string nomMode)
+    {
+        var moteur = Moteur(JeuVarie());
+
+        var variantes = Variantes(moteur, 2, Enum.Parse<ModeGeneration>(nomMode), criteres: [CriteresEquipe.Aucun, Criteres(imposes: [HeroFaible])]);
+
+        Assert.All(variantes, v => Assert.Contains(HeroFaible, v.Equipes[1]));
+    }
+
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Un_heros_banni_est_absent_de_son_equipe(string nomMode)
+    {
+        var moteur = Moteur(JeuVarie());
+
+        var variantes = Variantes(moteur, 2, Enum.Parse<ModeGeneration>(nomMode), criteres: [Criteres(bannis: [HeroFortA, HeroFortB])]);
+
+        Assert.All(variantes, v =>
+        {
+            Assert.DoesNotContain(HeroFortA, v.Equipes[0]);
+            Assert.DoesNotContain(HeroFortB, v.Equipes[0]);
+        });
+    }
+
+    [Theory]
+    [MemberData(nameof(Modes))]
+    public void Sans_critere_la_generation_est_inchangee(string nomMode)
+    {
+        var mode = Enum.Parse<ModeGeneration>(nomMode);
+        var moteur = Moteur(JeuVarie());
+
+        Assert.Equal(
+            Empreinte(Variantes(moteur, 2, mode)),
+            Empreinte(Variantes(moteur, 2, mode, criteres: [CriteresEquipe.Aucun, CriteresEquipe.Aucun])));
+    }
+
+    [Fact]
+    public void Un_heros_impose_inatteignable_ne_bloque_pas_la_generation()
+    {
+        var moteur = Moteur(JeuVarie());
+        var criteres = new[] { Criteres(imposes: [HeroFortA]), Criteres(imposes: [HeroFortA]) };
+
+        var variantes = Variantes(moteur, 2, ModeGeneration.SommeMaximale, criteres: criteres);
+
+        Assert.NotEmpty(variantes);
+        Assert.All(variantes, v => Assert.Equal(2, v.Equipes.Count));
+    }
+
+    [Fact]
+    public void Les_ecarts_comptent_les_imposes_manquants_et_les_bannis_presents()
+    {
+        var criteres = Criteres(imposes: [1, 2], bannis: [3, 4]);
+
+        Assert.Equal(2, criteres.Ecarts([1, 3, 9]));
+        Assert.Equal(0, criteres.Ecarts([1, 2, 9]));
     }
 }
