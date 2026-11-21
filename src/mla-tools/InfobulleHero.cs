@@ -38,8 +38,17 @@ internal sealed class InfobulleHero : IDisposable
     // Une seule infobulle pour toutes les lignes : une par ligne serait recréée à chaque affichage des cartes.
     private readonly ToolTip _infobulle = new() { OwnerDraw = true };
 
+    private const int DelaiAffichageMs = 500;
+    private const int DecalageCurseur = 20;
+    private const int EcartAuDessusCurseur = 2;
+
+    // Affichage manuel : le ToolTip natif calcule sa position avant que Popup n'en change la taille, et la fiche déborde alors de l'écran.
+    private readonly System.Windows.Forms.Timer _delai = new() { Interval = DelaiAffichageMs };
+    private Control? _ligneSurvolee;
+
     public InfobulleHero(Font police, Font gras)
     {
+        _delai.Tick += SurDelai;
         _police = police;
         _titre = new Font(gras.FontFamily, gras.Size + 1, gras.Style, gras.Unit);
         _petite = new Font(police.FontFamily, police.Size - 1, police.Style, police.Unit);
@@ -56,6 +65,7 @@ internal sealed class InfobulleHero : IDisposable
 
     public void Dispose()
     {
+        _delai.Dispose();
         _infobulle.Dispose();
         _titre.Dispose();
         _petite.Dispose();
@@ -66,7 +76,56 @@ internal sealed class InfobulleHero : IDisposable
     public void Associer(Control ligne, HeroStocke stocke, string role)
     {
         ligne.Tag = new Fiche(stocke, role);
-        _infobulle.SetToolTip(ligne, stocke.Hero.Nom);
+        ligne.MouseEnter += (_, _) =>
+        {
+            _ligneSurvolee = ligne;
+            _delai.Start();
+        };
+        ligne.MouseLeave += (_, _) => Masquer(ligne);
+        ligne.MouseDown += (_, _) => Masquer(ligne);
+        ligne.Disposed += (_, _) => Masquer(ligne);
+    }
+
+    private void Masquer(Control ligne)
+    {
+        if (_ligneSurvolee != ligne)
+        {
+            return;
+        }
+        _delai.Stop();
+        _ligneSurvolee = null;
+        _infobulle.Hide(ligne);
+    }
+
+    private void SurDelai(object? sender, EventArgs e)
+    {
+        _delai.Stop();
+        if (_ligneSurvolee is not { IsDisposed: false } ligne || ligne.Tag is not Fiche fiche)
+        {
+            return;
+        }
+        var curseur = Control.MousePosition;
+        var position = PositionDansEcran(curseur, Taille(fiche), Screen.FromPoint(curseur).WorkingArea);
+        var local = ligne.PointToClient(position);
+        _infobulle.Show(fiche.Stocke.Hero.Nom, ligne, local.X, local.Y);
+    }
+
+    /// <summary>Coin haut-gauche de la fiche : sous le curseur, ou au-dessus s'il n'y a pas la place en bas, et toujours dans la zone de travail de l'écran.</summary>
+    internal static Point PositionDansEcran(Point curseur, Size taille, Rectangle zone)
+    {
+        var y = curseur.Y + DecalageCurseur;
+        if (y + taille.Height > zone.Bottom)
+        {
+            y = curseur.Y - taille.Height - EcartAuDessusCurseur;
+        }
+        var x = Math.Min(curseur.X, zone.Right - taille.Width);
+        return new Point(Math.Max(x, zone.Left), Math.Max(y, zone.Top));
+    }
+
+    private Size Taille(Fiche fiche)
+    {
+        var largeur = E(LargeurReference);
+        return new Size(largeur, Rendre(null, fiche, new Rectangle(0, 0, largeur, 0)));
     }
 
     /// <summary>Factions affichées : celles du héros, puis celles que seul le lien d'âme ajoute.</summary>
@@ -82,8 +141,7 @@ internal sealed class InfobulleHero : IDisposable
     {
         if (e.AssociatedControl?.Tag is Fiche fiche)
         {
-            var largeur = E(LargeurReference);
-            e.ToolTipSize = new Size(largeur, Rendre(null, fiche, new Rectangle(0, 0, largeur, 0)));
+            e.ToolTipSize = Taille(fiche);
         }
     }
 
