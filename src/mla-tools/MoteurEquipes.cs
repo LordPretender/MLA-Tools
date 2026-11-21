@@ -85,6 +85,7 @@ internal sealed class MoteurEquipes
     private const string DescriptionSansResonance = "Aucune résonance";
     private const string RaisonHerosImposeIntrouvable = "un héros imposé est introuvable";
     private const string RaisonHerosImposeInterdit = "un héros imposé est interdit dans cette équipe (banni, factions toutes bannies ou étoiles insuffisantes)";
+    private const string RaisonAucunHeroAutorise = "aucun héros n'est autorisé par les critères de cette équipe";
     private const string RaisonFactionImposeeIntrouvable = "aucun héros autorisé ne porte la faction imposée {0}";
     private const string FactionOrdre = Referentiel.FactionOrdre;
     private const string FactionChaos = Referentiel.FactionChaos;
@@ -130,7 +131,7 @@ internal sealed class MoteurEquipes
 
     private readonly record struct Resonance(int Points, int Premier, int PremiereFaction, int SecondeFaction);
 
-    private readonly record struct Mesure(int Dps, int Tanks, int TanksSecondaires, int Soutiens, int Etoiles, int Penalite, int Chaos, Resonance Resonance);
+    private readonly record struct Mesure(int Dps, int Tanks, int TanksSecondaires, int Soutiens, int Etoiles, int Penalite, int Chaos, Resonance Resonance, bool TousJokers);
 
     private readonly Dictionary<int, InfoHero> _infos;
     private readonly List<string> _factions = [];
@@ -161,7 +162,7 @@ internal sealed class MoteurEquipes
     /// <summary>Factions telles que les critères les lisent : celles du héros, plus Ordre quand le lien d'âme le lui donne.</summary>
     public IReadOnlyList<string> FactionsDe(int heroId) => _infos[heroId].Factions;
 
-    /// <summary>Motif pour lequel une équipe n'est pas générée (un imposé qu'aucune composition valide ne peut tenir) ; nul quand elle l'est.</summary>
+    /// <summary>Motif pour lequel une équipe n'est pas générée (un imposé qu'aucune composition valide ne peut tenir, ou aucun héros autorisé par les critères) ; nul quand elle l'est.</summary>
     public string? RaisonInactive(CriteresEquipe criteres)
     {
         foreach (var id in criteres.Imposes)
@@ -181,6 +182,11 @@ internal sealed class MoteurEquipes
             {
                 return string.Format(CultureInfo.CurrentCulture, RaisonFactionImposeeIntrouvable, faction);
             }
+        }
+        // Sans aucun héros autorisé, l'équipe ne se remplira jamais : la laisser en jeu ferait déposer là des héros que l'optimiseur croit utiles, puis perdus.
+        if (_infos.Count > 0 && _infos.Keys.All(id => criteres.Interdit(id, EtoilesDe, FactionsDe)))
+        {
+            return RaisonAucunHeroAutorise;
         }
         return null;
     }
@@ -297,7 +303,7 @@ internal sealed class MoteurEquipes
             Array.Resize(ref _optionsEquipe, equipe.Length);
         }
 
-        int dps = 0, tanks = 0, soutiens = 0, etoiles = 0, chaos = 0, avecFaction = 0, secondaires = 0, moyens = 0;
+        int dps = 0, tanks = 0, soutiens = 0, etoiles = 0, chaos = 0, avecFaction = 0, secondaires = 0, moyens = 0, jokers = 0;
         foreach (var hero in equipe)
         {
             if (hero.TankSecondaire)
@@ -321,6 +327,10 @@ internal sealed class MoteurEquipes
             }
             else
             {
+                if (hero.Factions.Contains(FactionOrdre))
+                {
+                    jokers++;
+                }
                 _optionsEquipe[avecFaction++] = hero.Options;
             }
         }
@@ -332,7 +342,7 @@ internal sealed class MoteurEquipes
             // Recherche exhaustive : chaque héros choisit une de ses factions, on garde la combinaison la mieux payée.
             Explorer(0, avecFaction, ref resonance);
         }
-        return new Mesure(dps, tanks, secondaires, soutiens, etoiles, penalite, chaos, resonance);
+        return new Mesure(dps, tanks, secondaires, soutiens, etoiles, penalite, chaos, resonance, avecFaction > 0 && jokers == avecFaction);
     }
 
     // Un tank obligatoire, puis un second front : autre tank, tank secondaire ou héros d'équipement moyen.
@@ -393,8 +403,10 @@ internal sealed class MoteurEquipes
         var description = DescriptionSansResonance;
         if (resonance.Points > 0)
         {
+            // Des héros tous Ordre sont des jokers : nommer l'une des factions régulières (la première à égalité) serait faux.
+            var premiere = mesure.TousJokers ? FactionOrdre : _factions[resonance.PremiereFaction];
             var secondaire = resonance.Points == PointsBonusDouble ? $" + 2× {_factions[resonance.SecondeFaction]}" : string.Empty;
-            description = $"{resonance.Premier}× {_factions[resonance.PremiereFaction]}{secondaire} — {Bonus[resonance.Points]}";
+            description = $"{resonance.Premier}× {premiere}{secondaire} — {Bonus[resonance.Points]}";
         }
         return mesure.Chaos > 0 ? description + $" (+{mesure.Chaos} Chaos : {string.Join(", ", BonusChaos.Take(mesure.Chaos))})" : description;
     }

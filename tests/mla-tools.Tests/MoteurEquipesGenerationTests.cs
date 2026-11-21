@@ -542,6 +542,8 @@ public class MoteurEquipesGenerationTests
 
         var variantes = Variantes(moteur, 2, Enum.Parse<ModeGeneration>(nomMode), criteres: criteres);
 
+        // Une équipe sans héros autorisé est désactivée : l'optimiseur n'y dépose rien, donc ne la lui laisse pas dévorer des héros forts.
+        Assert.NotNull(moteur.RaisonInactive(criteres[0]));
         Assert.All(variantes, v =>
         {
             Assert.Empty(v.Equipes[0]);

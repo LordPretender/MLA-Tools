@@ -139,6 +139,14 @@ public class MoteurEquipesEvaluationTests
     }
 
     [Fact]
+    public void Equipe_de_jokers_seuls_se_decrit_comme_ordre_et_non_comme_une_faction_reguliere()
+    {
+        var evaluation = EvaluerEquipe([.. Enumerable.Range(1, 5).Select(id => Hero(id, ClasseDps, [Referentiel.FactionOrdre]))]);
+
+        Assert.Equal($"5× {Referentiel.FactionOrdre} — {BonusPour50}", evaluation.Description);
+    }
+
+    [Fact]
     public void Lien_d_ame_ajoute_ordre_aux_factions_du_heros()
     {
         var hero = MoteurEquipes.CreerHero(1, 1, ClasseDps, [FactionX], lienAme: true, EquipementLeger);

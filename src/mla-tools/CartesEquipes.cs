@@ -25,14 +25,13 @@ internal sealed class CartesEquipes(Font police, Font gras) : IDisposable
 
     private static readonly Dictionary<int, string> LibellesEtoiles = LecteurEtoiles.Paliers.ToDictionary(p => p.Valeur, p => p.Libelle);
 
-    private static readonly Color FondVert = Color.FromArgb(230, 244, 234);
-    private static readonly Color TexteVert = Color.FromArgb(24, 128, 56);
+    internal static readonly Color FondVert = Color.FromArgb(230, 244, 234);
+    internal static readonly Color TexteVert = Color.FromArgb(24, 128, 56);
     private static readonly Color FondRouge = Color.FromArgb(252, 232, 230);
     private static readonly Color TexteRouge = Color.FromArgb(197, 34, 31);
-    private static readonly Color FondNeutre = Color.FromArgb(238, 238, 238);
+    internal static readonly Color FondNeutre = Color.FromArgb(238, 238, 238);
 
-    // Une seule infobulle pour toutes les lignes : une par ligne serait recréée à chaque affichage des cartes.
-    private readonly ToolTip _infobulle = new();
+    private readonly InfobulleHero _infobulle = new(police, gras);
 
     public void Dispose() => _infobulle.Dispose();
 
@@ -208,7 +207,7 @@ internal sealed class CartesEquipes(Font police, Font gras) : IDisposable
             {
                 ContextMenuStrip = menu,
             };
-            _infobulle.SetToolTip(ligne, InfobulleHero.Texte(Heros[id], role));
+            _infobulle.Associer(ligne, Heros[id], role);
             if (SurClic is not null)
             {
                 ligne.MouseClick += (_, e) =>
