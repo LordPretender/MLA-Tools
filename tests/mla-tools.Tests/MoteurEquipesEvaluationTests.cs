@@ -147,27 +147,30 @@ public class MoteurEquipesEvaluationTests
     }
 
     [Fact]
-    public void Lien_d_ame_ajoute_ordre_aux_factions_du_heros()
+    public void Lien_d_ame_ajoute_ordre_aux_factions_de_resonance()
     {
-        var hero = MoteurEquipes.CreerHero(1, 1, ClasseDps, [FactionX], lienAme: true, EquipementLeger);
-
-        Assert.Equal(new[] { FactionX, Referentiel.FactionOrdre }, hero.Factions);
+        Assert.Equal(new[] { FactionX, Referentiel.FactionOrdre }, MoteurEquipes.FactionsEffectives([FactionX], lienAme: true));
     }
 
     [Fact]
     public void Lien_d_ame_n_ajoute_pas_ordre_en_double()
     {
-        var hero = MoteurEquipes.CreerHero(1, 1, ClasseDps, [Referentiel.FactionOrdre], lienAme: true, EquipementLeger);
-
-        Assert.Equal(new[] { Referentiel.FactionOrdre }, hero.Factions);
+        Assert.Equal(new[] { Referentiel.FactionOrdre }, MoteurEquipes.FactionsEffectives([Referentiel.FactionOrdre], lienAme: true));
     }
 
     [Fact]
-    public void Sans_lien_d_ame_les_factions_sont_inchangees()
+    public void Sans_lien_d_ame_les_factions_de_resonance_sont_inchangees()
     {
-        var hero = MoteurEquipes.CreerHero(1, 1, ClasseDps, [FactionX], lienAme: false, EquipementLeger);
+        Assert.Equal(new[] { FactionX }, MoteurEquipes.FactionsEffectives([FactionX], lienAme: false));
+    }
+
+    [Fact]
+    public void Lien_d_ame_laisse_les_factions_reelles_du_heros_intactes()
+    {
+        var hero = MoteurEquipes.CreerHero(1, 1, ClasseDps, [FactionX], lienAme: true, EquipementLeger);
 
         Assert.Equal(new[] { FactionX }, hero.Factions);
+        Assert.Equal(new[] { FactionX }, Moteur(hero).FactionsDe(1));
     }
 
     [Fact]

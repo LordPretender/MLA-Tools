@@ -822,7 +822,7 @@ internal sealed class FormEquipes : FormBase
 
     private int EtoilesDe(int id) => _parId[id].Hero.Etoiles;
 
-    private IReadOnlyList<string> FactionsDe(int id) => MoteurEquipes.FactionsEffectives(_parId[id].Hero.Factions, _parId[id].LienAme);
+    private IReadOnlyList<string> FactionsDe(int id) => _parId[id].Hero.Factions;
 
     // Les listes se reconstruisent depuis la base : une classe ou une faction n'existe que si un héros la porte.
     private void ActualiserFiltres()

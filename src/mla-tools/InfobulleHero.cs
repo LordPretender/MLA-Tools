@@ -133,7 +133,7 @@ internal sealed class InfobulleHero : IDisposable
     {
         var hero = stocke.Hero;
         var effectives = MoteurEquipes.FactionsEffectives(hero.Factions, stocke.LienAme);
-        // Le lien d'âme ajoute Ordre aux critères sans le changer dans les factions du héros : on le dit pour que l'infobulle explique les écarts.
+        // Le lien d'âme ajoute Ordre à la résonance seulement, pas aux critères de faction : on le dit pour que l'infobulle explique les écarts.
         return [.. hero.Factions.Select(f => new FactionAffichee(f, false)), .. effectives.Except(hero.Factions).Select(f => new FactionAffichee(f, true))];
     }
 

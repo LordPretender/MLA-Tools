@@ -3,7 +3,8 @@ using FonctionCout = System.Func<System.Collections.Generic.List<MlaTools.Evalua
 
 namespace MlaTools;
 
-internal sealed record HeroMoteur(int Id, int Etoiles, string Classe, IReadOnlyList<string> Factions, string Equipement, int? Famille = null);
+/// <summary><paramref name="Factions"/> sont les factions réelles du héros, que lisent les critères ; <paramref name="LienAme"/> ne joue que sur la résonance.</summary>
+internal sealed record HeroMoteur(int Id, int Etoiles, string Classe, IReadOnlyList<string> Factions, string Equipement, int? Famille = null, bool LienAme = false);
 
 /// <summary>Chaos1, Chaos2 et Chaos3 : valeur du 1er, du 2e et du 3e héros Chaos d'une équipe, dans l'unité des points de résonance.</summary>
 internal sealed record PoidsEquipes(double Roles, double Resonance, double Etoiles, double Chaos1 = 15, double Chaos2 = 5, double Chaos3 = 3)
@@ -131,7 +132,7 @@ internal sealed class MoteurEquipes
 
     // Un tank secondaire est un héros lourd qui n'a pas le rôle Tank ; un héros moyen de rôle Tank est déjà compté comme tank.
     private sealed record InfoHero(
-        int Id, int Etoiles, string Role, int IndexRole, int[] Options, ulong Masque, bool ChaosPur, bool TankSecondaire, bool Moyen, string Equipement, int Famille, IReadOnlyList<string> Factions);
+        int Id, int Etoiles, string Role, int IndexRole, int[] Options, ulong Masque, bool ChaosPur, bool TankSecondaire, bool Moyen, string Equipement, int Famille, IReadOnlyList<string> Factions, bool Joker);
 
     private readonly record struct Resonance(int Points, int Premier, int PremiereFaction, int SecondeFaction);
 
@@ -163,7 +164,7 @@ internal sealed class MoteurEquipes
 
     public int EtoilesDe(int heroId) => _infos[heroId].Etoiles;
 
-    /// <summary>Factions telles que les critères les lisent : celles du héros, plus Ordre quand le lien d'âme le lui donne.</summary>
+    /// <summary>Factions réelles du héros, telles que les critères les lisent : le lien d'âme n'y ajoute rien.</summary>
     public IReadOnlyList<string> FactionsDe(int heroId) => _infos[heroId].Factions;
 
     /// <summary>Motif pour lequel une équipe n'est pas générée (un imposé qu'aucune composition valide ne peut tenir, ou aucun héros autorisé par les critères) ; nul quand elle l'est.</summary>
@@ -245,11 +246,10 @@ internal sealed class MoteurEquipes
         return [.. candidates.Values.OrderBy(c => c.Cout).Take(nombreVariantes).Select(c => c.Repartition)];
     }
 
-    // Le lien d'âme fait compter le héros dans la faction Ordre pour la résonance, sans changer ses factions affichées.
     public static HeroMoteur CreerHero(int id, int etoiles, string classe, IReadOnlyList<string> factions, bool lienAme, string equipement, int? famille = null) =>
-        new(id, etoiles, classe, FactionsEffectives(factions, lienAme), equipement, famille);
+        new(id, etoiles, classe, factions, equipement, famille, lienAme);
 
-    // Partagé avec l'interface, pour que les critères de faction se lisent pareil dans le moteur et sur les cartes.
+    // Le lien d'âme fait compter le héros dans la faction Ordre pour la résonance seulement ; les critères de faction lisent les factions réelles du héros.
     public static IReadOnlyList<string> FactionsEffectives(IReadOnlyList<string> factions, bool lienAme) =>
         lienAme && !factions.Contains(FactionOrdre) ? [.. factions, FactionOrdre] : factions;
 
@@ -272,17 +272,18 @@ internal sealed class MoteurEquipes
         // Le Chaos l'emporte sur toute autre faction : le héros ne résonne pas mais donne un bonus aux alliés.
         if (hero.Factions.Contains(FactionChaos))
         {
-            return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, [], 0, true, tankSecondaire, moyen, equipement, famille, hero.Factions);
+            return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, [], 0, true, tankSecondaire, moyen, equipement, famille, hero.Factions, Joker: false);
         }
-        var factions = hero.Factions.ToList();
-        if (factions.Contains(FactionOrdre))
+        var factions = FactionsEffectives(hero.Factions, hero.LienAme).ToList();
+        var joker = factions.Contains(FactionOrdre);
+        if (joker)
         {
             factions = [.. factions.Where(f => f != FactionOrdre).Concat(FactionsRegulieres).Distinct()];
         }
 
         var options = factions.Select(IndexerFaction).ToArray();
         var masque = options.Aggregate(0UL, (acc, index) => acc | (1UL << index));
-        return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, options, masque, false, tankSecondaire, moyen, equipement, famille, hero.Factions);
+        return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, options, masque, false, tankSecondaire, moyen, equipement, famille, hero.Factions, joker);
     }
 
     private int IndexerFaction(string faction)
@@ -331,7 +332,7 @@ internal sealed class MoteurEquipes
             }
             else
             {
-                if (hero.Factions.Contains(FactionOrdre))
+                if (hero.Joker)
                 {
                     jokers++;
                 }

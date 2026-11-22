@@ -24,6 +24,8 @@ public class MoteurEquipesGenerationTests
     // Seuls les héros 1, 5 et 12 ont 5 étoiles dans JeuVarie.
     private const int HerosCinqEtoiles = 3;
     private const string FactionInexistante = "Inexistante";
+    // Dans JeuVarie, un héros de la seule faction X.
+    private const int HeroAvecLienAme = 3;
 
     // Le mode passe par son nom : ModeGeneration est internal, un paramètre de test public ne peut pas en porter le type.
     public static IEnumerable<object[]> Modes => Enum.GetNames<ModeGeneration>().Select(nom => new object[] { nom });
@@ -83,6 +85,9 @@ public class MoteurEquipesGenerationTests
         Hero(6, ClasseDps, [FactionZ], 1), Hero(7, ClasseSoutien, [FactionX], 3), Hero(8, ClasseSoutien, [FactionZ], 2),
         Hero(9, ClasseDps, [FactionY], 4), Hero(10, ClasseTank, [FactionZ], 1), Hero(11, ClasseDps, [FactionX], 3), Hero(12, ClasseSoutien, [FactionY], 5),
     ];
+
+    private static MoteurEquipes MoteurAvecLienAme() =>
+        Moteur([.. JeuVarie().Select(h => h.Id == HeroAvecLienAme ? h with { LienAme = true } : h)]);
 
     private static HeroMoteur[] JeuAleatoire(int graine, int nombre)
     {
@@ -499,6 +504,25 @@ public class MoteurEquipesGenerationTests
 
         // Le héros 4 porte X et Y, toutes deux bannies : il est exclu comme les héros mono-faction X ou Y.
         Assert.All(variantes, v => Assert.All(v.Equipes[0], id => Assert.Contains(moteur.FactionsDe(id), faction => !bannies.Contains(faction))));
+    }
+
+    // Le lien d'âme ne sert qu'à la résonance : le héros 3 (faction X) reste exclu quand tout sauf Ordre est banni.
+    [Fact]
+    public void Le_lien_d_ame_ne_sauve_pas_un_heros_dont_les_factions_sont_toutes_bannies()
+    {
+        var moteur = MoteurAvecLienAme();
+        var criteres = Criteres(factionsBannies: [.. Referentiel.Factions.Where(f => f != Referentiel.FactionOrdre)]);
+
+        Assert.True(criteres.Interdit(HeroAvecLienAme, moteur.EtoilesDe, moteur.FactionsDe));
+    }
+
+    [Fact]
+    public void Le_lien_d_ame_ne_satisfait_pas_une_faction_ordre_imposee()
+    {
+        var moteur = MoteurAvecLienAme();
+
+        Assert.DoesNotContain(Referentiel.FactionOrdre, moteur.FactionsDe(HeroAvecLienAme));
+        Assert.NotNull(moteur.RaisonInactive(Criteres(factionsImposees: [Referentiel.FactionOrdre])));
     }
 
     [Fact]
