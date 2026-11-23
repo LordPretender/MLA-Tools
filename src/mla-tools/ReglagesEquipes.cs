@@ -15,19 +15,32 @@ internal sealed class ReglagesEquipes
     private readonly Dictionary<int, HashSet<string>> _factionsImposees = [];
     private readonly Dictionary<int, HashSet<string>> _factionsBannies = [];
 
-    /// <summary>Seuil d'étoiles par héros valable pour toutes les équipes ; 0 = aucun. Hors <see cref="Reinitialiser"/> : il n'appartient à aucune équipe.</summary>
-    public int EtoilesMiniHerosGlobal { get; set; }
+    private const int EtoilesMiniCompositionParDefaut = 0;
+    private const bool LienAmeActifParDefaut = true;
 
-    /// <summary>Faux dans un mode de jeu sans lien d'âme. Global comme le seuil : hors <see cref="Reinitialiser"/>.</summary>
-    public bool LienAmeActif { get; set; } = true;
+    /// <summary>Niveau composition : seuil d'étoiles par héros valable pour toutes les équipes ; 0 = aucun. Hors <see cref="Reinitialiser"/> : il n'appartient à aucune équipe, seul <see cref="ReinitialiserComposition"/> le remet à zéro.</summary>
+    public int EtoilesMiniHerosComposition { get; set; } = EtoilesMiniCompositionParDefaut;
+
+    /// <summary>Niveau composition : faux dans un mode de jeu sans lien d'âme. Hors <see cref="Reinitialiser"/>, comme le seuil.</summary>
+    public bool LienAmeActif { get; set; } = LienAmeActifParDefaut;
+
+    /// <summary>Vrai quand le niveau composition s'écarte de ses valeurs par défaut.</summary>
+    public bool ADesReglagesComposition => EtoilesMiniHerosComposition != EtoilesMiniCompositionParDefaut || LienAmeActif != LienAmeActifParDefaut;
+
+    /// <summary>Remet le niveau composition à ses valeurs par défaut ; les réglages des équipes ne bougent pas.</summary>
+    public void ReinitialiserComposition()
+    {
+        EtoilesMiniHerosComposition = EtoilesMiniCompositionParDefaut;
+        LienAmeActif = LienAmeActifParDefaut;
+    }
 
     public IReadOnlyCollection<int> Imposes(int equipe) => Lire(_imposes, equipe);
 
-    /// <summary>Seuil propre à l'équipe, sans le seuil global.</summary>
+    /// <summary>Seuil propre à l'équipe, sans le seuil de la composition.</summary>
     public int EtoilesMiniHeros(int equipe) => _etoilesMiniHeros.GetValueOrDefault(equipe);
 
-    // Le plus élevé des deux : une équipe peut durcir le seuil global, jamais l'assouplir.
-    private int EtoilesMiniHerosEffectif(int equipe) => Math.Max(EtoilesMiniHerosGlobal, EtoilesMiniHeros(equipe));
+    // Le plus élevé des deux : une équipe peut durcir le seuil de la composition, jamais l'assouplir.
+    private int EtoilesMiniHerosEffectif(int equipe) => Math.Max(EtoilesMiniHerosComposition, EtoilesMiniHeros(equipe));
 
     /// <summary>0 retire le seuil.</summary>
     public void FixerEtoilesMiniHeros(int equipe, int etoiles)
@@ -109,7 +122,7 @@ internal sealed class ReglagesEquipes
         _factionsBannies.Remove(equipe);
     }
 
-    /// <summary>Vide les réglages de toutes les équipes ; le seuil global, qui n'appartient à aucune équipe, reste.</summary>
+    /// <summary>Vide les réglages de toutes les équipes ; le niveau composition, qui n'appartient à aucune équipe, reste.</summary>
     public void ReinitialiserToutes()
     {
         _imposes.Clear();
@@ -119,7 +132,7 @@ internal sealed class ReglagesEquipes
         _factionsBannies.Clear();
     }
 
-    /// <summary>Vrai dès qu'une équipe a au moins un critère ; le seuil global n'en est pas un.</summary>
+    /// <summary>Vrai dès qu'une équipe a au moins un critère ; le niveau composition n'en est pas un.</summary>
     public bool ADesReglages =>
         _imposes.Values.Any(e => e.Count > 0) || _bannis.Values.Any(e => e.Count > 0) || _etoilesMiniHeros.Count > 0
         || _factionsImposees.Values.Any(e => e.Count > 0) || _factionsBannies.Values.Any(e => e.Count > 0);
@@ -160,7 +173,7 @@ internal sealed class ReglagesEquipes
 
     public ReglagesEquipes Copier()
     {
-        var copie = new ReglagesEquipes { EtoilesMiniHerosGlobal = EtoilesMiniHerosGlobal, LienAmeActif = LienAmeActif };
+        var copie = new ReglagesEquipes { EtoilesMiniHerosComposition = EtoilesMiniHerosComposition, LienAmeActif = LienAmeActif };
         foreach (var (equipe, ids) in _imposes)
         {
             copie._imposes[equipe] = [.. ids];
@@ -199,9 +212,9 @@ internal sealed class ReglagesEquipes
 
     /// <summary>Valeurs issues de la base : une partie illisible ou incohérente est ignorée, le reste est gardé.</summary>
     public static ReglagesEquipes Charger(
-        string? imposes, string? bannis, string? etoilesMiniHeros = null, int etoilesMiniHerosGlobal = 0, string? factionsImposees = null, string? factionsBannies = null, bool lienAmeActif = true)
+        string? imposes, string? bannis, string? etoilesMiniHeros = null, int etoilesMiniHerosComposition = 0, string? factionsImposees = null, string? factionsBannies = null, bool lienAmeActif = true)
     {
-        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = Math.Clamp(etoilesMiniHerosGlobal, 0, FormOptionsGeneration.EtoilesMinimumMax), LienAmeActif = lienAmeActif };
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosComposition = Math.Clamp(etoilesMiniHerosComposition, 0, FormOptionsGeneration.EtoilesMinimumMax), LienAmeActif = lienAmeActif };
         foreach (var (equipe, id) in Decoder(imposes))
         {
             reglages.Imposer(equipe, id);

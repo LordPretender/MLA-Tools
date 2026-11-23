@@ -38,7 +38,8 @@ internal sealed class FormEquipes : FormBase
     private const string CleFactionsImposees = "factions_imposees";
     private const string CleFactionsBannies = "factions_bannies";
     private const string CleEtoilesMiniHeros = "etoiles_mini_heros";
-    private const string CleEtoilesMiniHerosGlobal = "etoiles_mini_heros_global";
+    // La clé garde son ancien nom « global » : la renommer ferait perdre la valeur déjà enregistrée.
+    private const string CleEtoilesMiniHerosComposition = "etoiles_mini_heros_global";
     private const string CleLienAmeActif = "lien_ame_actif";
     private const string ValeurVraie = "1";
     private const string ValeurFausse = "0";
@@ -97,6 +98,8 @@ internal sealed class FormEquipes : FormBase
     private readonly Label _libelleNombreEquipes = new() { Text = "Nombre d'équipes", AutoSize = true, Margin = new Padding(3, 6, 6, 0) };
     private readonly Label _libelleMode = new() { Text = "Mode", AutoSize = true, Margin = new Padding(16, 6, 6, 0) };
     private readonly ComboBox _choixMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 230 };
+
+    private readonly Button _boutonComposition = new() { Text = "Réglages de la composition", AutoSize = true, Margin = new Padding(16, 3, 3, 3) };
 
     private readonly Label _avisReinitialisation = new() { Text = "Réglages des équipes réinitialisés", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(16, 8, 3, 0), Visible = false };
     private readonly System.Windows.Forms.Timer _delaiAvis = new() { Interval = DureeAvisMs };
@@ -385,7 +388,8 @@ internal sealed class FormEquipes : FormBase
     private TabPage ConstruireOngletEquipes()
     {
         var page = NouvellePage("Générateur");
-        var generer = new Button { Text = "Générer", AutoSize = true, Margin = new Padding(16, 3, 3, 3) };
+        _boutonComposition.Click += (_, _) => ReglerComposition();
+        var generer = new Button { Text = "Générer", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
         generer.Click += (_, _) => GenererEquipes();
         var enregistrer = new Button { Text = "Enregistrer la composition", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
         enregistrer.Click += (_, _) => EnregistrerComposition();
@@ -411,6 +415,7 @@ internal sealed class FormEquipes : FormBase
         barre.Controls.Add(_nombreVariantes);
         barre.Controls.Add(_libelleMode);
         barre.Controls.Add(_choixMode);
+        barre.Controls.Add(_boutonComposition);
         AfficherChoixMode();
         barre.Controls.Add(generer);
         barre.Controls.Add(enregistrer);
@@ -562,7 +567,7 @@ internal sealed class FormEquipes : FormBase
             ? ModeGeneration.SommeMaximale
             : ModeGeneration.MeilleureEquipeDAbord;
         _etoilesMinimum = LireMinimums(parametres);
-        _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis), parametres.GetValueOrDefault(CleEtoilesMiniHeros), (int)Math.Clamp(Lire(parametres, CleEtoilesMiniHerosGlobal, 0), 0, FormOptionsGeneration.EtoilesMinimumMax), parametres.GetValueOrDefault(CleFactionsImposees), parametres.GetValueOrDefault(CleFactionsBannies), parametres.GetValueOrDefault(CleLienAmeActif) != ValeurFausse);
+        _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis), parametres.GetValueOrDefault(CleEtoilesMiniHeros), (int)Math.Clamp(Lire(parametres, CleEtoilesMiniHerosComposition, 0), 0, FormOptionsGeneration.EtoilesMinimumMax), parametres.GetValueOrDefault(CleFactionsImposees), parametres.GetValueOrDefault(CleFactionsBannies), parametres.GetValueOrDefault(CleLienAmeActif) != ValeurFausse);
         AfficherMode();
         AfficherChoixMode();
     }
@@ -730,10 +735,15 @@ internal sealed class FormEquipes : FormBase
     }
 
     // Retourne vrai quand des réglages existaient : sans eux, le vidage est invisible et n'a pas à être annoncé.
-    private bool ReinitialiserReglages()
+    // Le niveau composition ne se vide que sur demande : changer les options globales ne le touche pas.
+    private bool ReinitialiserReglages(bool avecComposition = true)
     {
-        var existaient = _reglages.ADesReglages || _etoilesMinimum.Any(minimum => minimum > 0);
+        var existaient = _reglages.ADesReglages || _etoilesMinimum.Any(minimum => minimum > 0) || (avecComposition && _reglages.ADesReglagesComposition);
         _reglages.ReinitialiserToutes();
+        if (avecComposition)
+        {
+            _reglages.ReinitialiserComposition();
+        }
         _etoilesMinimum.Clear();
         return existaient;
     }
@@ -760,9 +770,11 @@ internal sealed class FormEquipes : FormBase
     {
         var anciensReglages = _reglages.Copier();
         var anciensMinimums = _etoilesMinimum.ToList();
+        var lienAmeAvant = _reglages.LienAmeActif;
         var existaient = ReinitialiserReglages();
         if (Proteger(SauvegarderParametres))
         {
+            SynchroniserMoteur(lienAmeAvant);
             if (existaient)
             {
                 AnnoncerReinitialisation();
@@ -798,6 +810,7 @@ internal sealed class FormEquipes : FormBase
         _nombreEquipes.Enabled = modifiable;
         _libelleMode.Enabled = modifiable;
         _choixMode.Enabled = modifiable;
+        _boutonComposition.Enabled = modifiable;
     }
 
     private void ReinitialiserComposition()
@@ -810,6 +823,7 @@ internal sealed class FormEquipes : FormBase
         var anciennesVariantes = _variantes;
         var anciensReglages = _reglages.Copier();
         var anciensMinimums = _etoilesMinimum.ToList();
+        var lienAmeAvant = _reglages.LienAmeActif;
         _variantes = [];
         ReinitialiserReglages();
         if (!Proteger(SauvegarderParametres))
@@ -821,12 +835,47 @@ internal sealed class FormEquipes : FormBase
             return;
         }
 
+        SynchroniserMoteur(lienAmeAvant);
         _equipes = [];
         _reserve = [];
         _selection = null;
         Proteger(SauvegarderRepartition);
         _barreVariantes.Visible = false;
         AfficherVerrouGeneration();
+        AfficherCartes();
+    }
+
+    // Le lien d'âme est lu à la construction du moteur : un changement de valeur impose de le reconstruire pour qu'il joue.
+    private void SynchroniserMoteur(bool lienAmeAvant)
+    {
+        if (lienAmeAvant != _reglages.LienAmeActif)
+        {
+            _moteur = CreerMoteur();
+        }
+    }
+
+    // Régler la composition ne touche pas aux réglages des équipes : ils font partie de la même composition en cours, que « Réinitialiser » vide d'un bloc.
+    private void ReglerComposition()
+    {
+        using var dialogue = new FormReglageComposition(_reglages.EtoilesMiniHerosComposition, _reglages.LienAmeActif);
+        if (dialogue.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+        if (dialogue.EtoilesMiniHeros == _reglages.EtoilesMiniHerosComposition && dialogue.LienAmeActif == _reglages.LienAmeActif)
+        {
+            return;
+        }
+
+        var anciensReglages = _reglages.Copier();
+        _reglages.EtoilesMiniHerosComposition = dialogue.EtoilesMiniHeros;
+        _reglages.LienAmeActif = dialogue.LienAmeActif;
+        if (!Proteger(SauvegarderParametres))
+        {
+            _reglages = anciensReglages;
+            return;
+        }
+        SynchroniserMoteur(anciensReglages.LienAmeActif);
         AfficherCartes();
     }
 
@@ -970,7 +1019,7 @@ internal sealed class FormEquipes : FormBase
 
     private void OuvrirOptions()
     {
-        using var dialogue = new FormOptionsGeneration(_poids, _reglages.EtoilesMiniHerosGlobal, _reglages.LienAmeActif);
+        using var dialogue = new FormOptionsGeneration(_poids);
         if (dialogue.ShowDialog(this) != DialogResult.OK)
         {
             return;
@@ -979,38 +1028,25 @@ internal sealed class FormEquipes : FormBase
         var ancien = _poids;
         var anciensReglages = _reglages.Copier();
         var anciensMinimums = _etoilesMinimum.ToList();
-        var lienAmeModifie = dialogue.LienAmeActif != _reglages.LienAmeActif;
-        var modifie = dialogue.Poids != _poids || dialogue.EtoilesMiniHeros != _reglages.EtoilesMiniHerosGlobal || lienAmeModifie;
-        _poids = dialogue.Poids;
-        _reglages.EtoilesMiniHerosGlobal = dialogue.EtoilesMiniHeros;
-        _reglages.LienAmeActif = dialogue.LienAmeActif;
         var existaient = false;
-        if (modifie)
+        _poids = dialogue.Poids;
+        if (_poids != ancien)
         {
-            // Changer les options démarre une nouvelle composition : les réglages de chaque équipe repartent de zéro.
-            existaient = ReinitialiserReglages();
+            // Changer les poids démarre une nouvelle composition : les réglages de chaque équipe repartent de zéro.
+            existaient = ReinitialiserReglages(avecComposition: false);
         }
-        var sauvegarde = Proteger(SauvegarderParametres);
-        if (!sauvegarde)
+        if (!Proteger(SauvegarderParametres))
         {
             _poids = ancien;
             _reglages = anciensReglages;
             _etoilesMinimum = anciensMinimums;
-        }
-        // Le lien d'âme est lu à la construction du moteur : il faut le reconstruire, avec la valeur retenue, pour que le changement joue.
-        if (lienAmeModifie)
-        {
-            _moteur = CreerMoteur();
-        }
-        if (!sauvegarde)
-        {
             return;
         }
         if (existaient)
         {
             AnnoncerReinitialisation();
         }
-        // Le seuil global et la réinitialisation changent ce que les cartes signalent comme non tenu.
+        // La réinitialisation change ce que les cartes signalent comme non tenu.
         AfficherCartes();
     }
 
@@ -1168,7 +1204,7 @@ internal sealed class FormEquipes : FormBase
         BaseSqlite.EcrireParametre(CleFactionsImposees, _reglages.SerialiserFactionsImposees(), _chemin);
         BaseSqlite.EcrireParametre(CleFactionsBannies, _reglages.SerialiserFactionsBannies(), _chemin);
         BaseSqlite.EcrireParametre(CleEtoilesMiniHeros, _reglages.SerialiserEtoilesMiniHeros(), _chemin);
-        BaseSqlite.EcrireParametre(CleEtoilesMiniHerosGlobal, _reglages.EtoilesMiniHerosGlobal.ToString(CultureInfo.InvariantCulture), _chemin);
+        BaseSqlite.EcrireParametre(CleEtoilesMiniHerosComposition, _reglages.EtoilesMiniHerosComposition.ToString(CultureInfo.InvariantCulture), _chemin);
         BaseSqlite.EcrireParametre(CleLienAmeActif, _reglages.LienAmeActif ? ValeurVraie : ValeurFausse, _chemin);
         BaseSqlite.EcrireParametre(CleListeVariantes, SerialiserVariantes(_variantes), _chemin);
     }

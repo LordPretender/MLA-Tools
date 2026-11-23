@@ -49,7 +49,7 @@ public class ReglagesEquipesTests
     [Fact]
     public void Tout_reinitialiser_vide_chaque_equipe_mais_garde_le_seuil_global()
     {
-        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = SeuilGlobal };
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosComposition = SeuilGlobal };
         reglages.Imposer(PremiereEquipe, Heros);
         reglages.Bannir(SecondeEquipe, Heros);
         reglages.FixerEtoilesMiniHeros(PremiereEquipe, SeuilHeros);
@@ -66,13 +66,13 @@ public class ReglagesEquipesTests
             Assert.Empty(reglages.FactionsImposees(equipe));
             Assert.Empty(reglages.FactionsBannies(equipe));
         }
-        Assert.Equal(SeuilGlobal, reglages.EtoilesMiniHerosGlobal);
+        Assert.Equal(SeuilGlobal, reglages.EtoilesMiniHerosComposition);
     }
 
     [Fact]
     public void Resume_decrit_les_criteres_actifs_d_une_equipe_et_est_vide_sans_critere()
     {
-        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = SeuilGlobal };
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosComposition = SeuilGlobal };
         Assert.False(reglages.ADesReglages);
         Assert.Empty(reglages.Resume(PremiereEquipe));
 
@@ -173,7 +173,7 @@ public class ReglagesEquipesTests
     [Fact]
     public void Le_seuil_global_s_applique_a_toutes_les_equipes_et_le_seuil_d_equipe_le_releve()
     {
-        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = SeuilGlobal };
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosComposition = SeuilGlobal };
         reglages.FixerEtoilesMiniHeros(SecondeEquipe, SeuilEquipeHaut);
 
         Assert.Equal(SeuilGlobal, reglages.Criteres(PremiereEquipe, _ => true).EtoilesMiniHeros);
@@ -183,7 +183,7 @@ public class ReglagesEquipesTests
     [Fact]
     public void Un_seuil_d_equipe_sous_le_seuil_global_ne_l_assouplit_pas()
     {
-        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = SeuilGlobal };
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosComposition = SeuilGlobal };
         reglages.FixerEtoilesMiniHeros(PremiereEquipe, SeuilHeros);
 
         Assert.Equal(SeuilGlobal, reglages.Criteres(PremiereEquipe, _ => true).EtoilesMiniHeros);
@@ -192,21 +192,21 @@ public class ReglagesEquipesTests
     [Fact]
     public void Le_seuil_global_survit_a_la_copie_et_a_la_reinitialisation_d_une_equipe()
     {
-        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = SeuilGlobal };
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosComposition = SeuilGlobal };
 
         var copie = reglages.Copier();
         reglages.Reinitialiser(PremiereEquipe);
 
-        Assert.Equal(SeuilGlobal, copie.EtoilesMiniHerosGlobal);
-        Assert.Equal(SeuilGlobal, reglages.EtoilesMiniHerosGlobal);
+        Assert.Equal(SeuilGlobal, copie.EtoilesMiniHerosComposition);
+        Assert.Equal(SeuilGlobal, reglages.EtoilesMiniHerosComposition);
     }
 
     [Fact]
     public void Le_seuil_global_charge_est_borne_au_maximum_et_au_minimum()
     {
-        Assert.Equal(FormOptionsGeneration.EtoilesMinimumMax, ReglagesEquipes.Charger(null, null, null, 9999).EtoilesMiniHerosGlobal);
-        Assert.Equal(0, ReglagesEquipes.Charger(null, null, null, -3).EtoilesMiniHerosGlobal);
-        Assert.Equal(SeuilGlobal, ReglagesEquipes.Charger(null, null, null, SeuilGlobal).EtoilesMiniHerosGlobal);
+        Assert.Equal(FormOptionsGeneration.EtoilesMinimumMax, ReglagesEquipes.Charger(null, null, null, 9999).EtoilesMiniHerosComposition);
+        Assert.Equal(0, ReglagesEquipes.Charger(null, null, null, -3).EtoilesMiniHerosComposition);
+        Assert.Equal(SeuilGlobal, ReglagesEquipes.Charger(null, null, null, SeuilGlobal).EtoilesMiniHerosComposition);
     }
 
     [Fact]
@@ -322,5 +322,42 @@ public class ReglagesEquipesTests
 
         Assert.Equal([Heros], criteres[PremiereEquipe].Imposes);
         Assert.True(criteres[SecondeEquipe].EstVide);
+    }
+
+    [Fact]
+    public void Les_valeurs_par_defaut_du_niveau_composition_ne_comptent_pas_comme_des_reglages()
+    {
+        var reglages = new ReglagesEquipes();
+
+        Assert.False(reglages.ADesReglagesComposition);
+        Assert.Equal(0, reglages.Criteres(PremiereEquipe, _ => true).EtoilesMiniHeros);
+    }
+
+    [Fact]
+    public void ReinitialiserComposition_remet_le_seuil_et_le_lien_d_ame_par_defaut_sans_toucher_aux_equipes()
+    {
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosComposition = SeuilGlobal, LienAmeActif = false };
+        reglages.Imposer(PremiereEquipe, Heros);
+        reglages.FixerEtoilesMiniHeros(SecondeEquipe, SeuilHeros);
+
+        Assert.True(reglages.ADesReglagesComposition);
+        reglages.ReinitialiserComposition();
+
+        Assert.False(reglages.ADesReglagesComposition);
+        Assert.Equal(0, reglages.EtoilesMiniHerosComposition);
+        Assert.True(reglages.LienAmeActif);
+        Assert.Equal([Heros], reglages.Imposes(PremiereEquipe));
+        Assert.Equal(SeuilHeros, reglages.EtoilesMiniHeros(SecondeEquipe));
+    }
+
+    [Fact]
+    public void ReinitialiserToutes_ne_touche_pas_au_niveau_composition()
+    {
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosComposition = SeuilGlobal, LienAmeActif = false };
+
+        reglages.ReinitialiserToutes();
+
+        Assert.Equal(SeuilGlobal, reglages.EtoilesMiniHerosComposition);
+        Assert.False(reglages.LienAmeActif);
     }
 }

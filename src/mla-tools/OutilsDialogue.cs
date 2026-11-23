@@ -18,6 +18,7 @@ internal static class OutilsDialogue
     private static readonly Color TexteBoutonDesactive = Color.FromArgb(120, 120, 120);
     private const int MargeHorizontaleBouton = 20;
     private const int MargeVerticaleBouton = 7;
+    private const int LargeurAide = 380;
 
     /// <summary>Donne à tous les boutons d'une fenêtre le même style plat bleu.</summary>
     public static void StyliserBoutons(Control racine)
@@ -137,6 +138,24 @@ internal static class OutilsDialogue
     {
         table.Controls.Add(new Label { Text = titre, AutoSize = true, Margin = new Padding(3, 6, 16, 3) });
         table.Controls.Add(champ);
+    }
+
+    public static TabPage PageChamps(string titre, Action<TableLayoutPanel> remplir)
+    {
+        var table = TableChamps(10);
+        remplir(table);
+        var page = new TabPage(titre);
+        page.Controls.Add(table);
+        return page;
+    }
+
+    // L'aide reste visible sous son champ : un réglage sans explication ne se règle qu'à tâtons.
+    public static void AjouterChampAvecAide(TableLayoutPanel table, string titre, Control champ, string aide)
+    {
+        AjouterLigne(table, titre, champ);
+        var texte = new Label { Text = aide, AutoSize = true, MaximumSize = new Size(LargeurAide, 0), ForeColor = Color.DimGray, Margin = new Padding(3, 0, 3, 12) };
+        table.Controls.Add(texte);
+        table.SetColumnSpan(texte, 2);
     }
 
     /// <summary>Barre de boutons alignée à droite ; le premier bouton passé occupe l'extrémité droite.</summary>
