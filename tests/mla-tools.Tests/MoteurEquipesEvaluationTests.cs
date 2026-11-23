@@ -186,6 +186,35 @@ public class MoteurEquipesEvaluationTests
     }
 
     [Fact]
+    public void Sans_lien_d_ame_actif_un_heros_avec_lien_d_ame_ne_fait_plus_resonner()
+    {
+        HeroMoteur[] equipe =
+        [
+            .. Heros(2, ClasseDps, FactionX),
+            MoteurEquipes.CreerHero(100, 1, ClasseDps, [FactionY], lienAme: true, EquipementLeger),
+        ];
+
+        var evaluation = new MoteurEquipes(equipe, Roles, lienAmeActif: false).Evaluer([.. equipe.Select(h => h.Id)]);
+
+        Assert.Equal(0, evaluation.Points);
+        Assert.Equal(DescriptionSansResonance, evaluation.Description);
+    }
+
+    [Fact]
+    public void Sans_lien_d_ame_actif_un_heros_de_faction_reelle_resonne_toujours()
+    {
+        HeroMoteur[] equipe =
+        [
+            .. Heros(2, ClasseDps, FactionX),
+            MoteurEquipes.CreerHero(100, 1, ClasseDps, [FactionX], lienAme: true, EquipementLeger),
+        ];
+
+        var evaluation = new MoteurEquipes(equipe, Roles, lienAmeActif: false).Evaluer([.. equipe.Select(h => h.Id)]);
+
+        Assert.Equal(PointsPour25, evaluation.Points);
+    }
+
+    [Fact]
     public void Classe_absente_des_roles_est_un_dps()
     {
         var moteur = Moteur(Hero(1, ClasseSansRole));

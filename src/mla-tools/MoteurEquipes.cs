@@ -147,13 +147,14 @@ internal sealed class MoteurEquipes
     // Sans héros de même famille, aucun échange n'a à être contrôlé : la recherche garde alors exactement son parcours d'origine.
     private readonly bool _famillesPartagees;
 
-    public MoteurEquipes(IEnumerable<HeroMoteur> heros, IReadOnlyDictionary<string, string> roles)
+    /// <param name="lienAmeActif">Faux dans un mode de jeu sans lien d'âme : aucun héros n'y devient joker Ordre pour la résonance.</param>
+    public MoteurEquipes(IEnumerable<HeroMoteur> heros, IReadOnlyDictionary<string, string> roles, bool lienAmeActif = true)
     {
         foreach (var faction in FactionsRegulieres)
         {
             IndexerFaction(faction);
         }
-        _infos = heros.Select(h => Construire(h, roles)).ToDictionary(h => h.Id);
+        _infos = heros.Select(h => Construire(h, roles, lienAmeActif)).ToDictionary(h => h.Id);
         _famillesPartagees = _infos.Values.Select(h => h.Famille).Distinct().Count() < _infos.Count;
         _comptes = new int[_factions.Count];
     }
@@ -253,7 +254,7 @@ internal sealed class MoteurEquipes
     public static IReadOnlyList<string> FactionsEffectives(IReadOnlyList<string> factions, bool lienAme) =>
         lienAme && !factions.Contains(FactionOrdre) ? [.. factions, FactionOrdre] : factions;
 
-    private InfoHero Construire(HeroMoteur hero, IReadOnlyDictionary<string, string> roles)
+    private InfoHero Construire(HeroMoteur hero, IReadOnlyDictionary<string, string> roles, bool lienAmeActif)
     {
         var role = roles.TryGetValue(hero.Classe, out var attribue) ? attribue : RoleDps;
         var indexRole = role switch
@@ -274,7 +275,7 @@ internal sealed class MoteurEquipes
         {
             return new InfoHero(hero.Id, hero.Etoiles, role, indexRole, [], 0, true, tankSecondaire, moyen, equipement, famille, hero.Factions, Joker: false);
         }
-        var factions = FactionsEffectives(hero.Factions, hero.LienAme).ToList();
+        var factions = FactionsEffectives(hero.Factions, hero.LienAme && lienAmeActif).ToList();
         var joker = factions.Contains(FactionOrdre);
         if (joker)
         {

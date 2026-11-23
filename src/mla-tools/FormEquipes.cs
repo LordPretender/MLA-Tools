@@ -39,6 +39,9 @@ internal sealed class FormEquipes : FormBase
     private const string CleFactionsBannies = "factions_bannies";
     private const string CleEtoilesMiniHeros = "etoiles_mini_heros";
     private const string CleEtoilesMiniHerosGlobal = "etoiles_mini_heros_global";
+    private const string CleLienAmeActif = "lien_ame_actif";
+    private const string ValeurVraie = "1";
+    private const string ValeurFausse = "0";
     private const string CleVariantes = "variantes";
     private const int VariantesParDefaut = 5;
     private const int VariantesMax = 20;
@@ -554,7 +557,7 @@ internal sealed class FormEquipes : FormBase
             ? ModeGeneration.SommeMaximale
             : ModeGeneration.MeilleureEquipeDAbord;
         _etoilesMinimum = LireMinimums(parametres);
-        _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis), parametres.GetValueOrDefault(CleEtoilesMiniHeros), (int)Math.Clamp(Lire(parametres, CleEtoilesMiniHerosGlobal, 0), 0, FormOptionsGeneration.EtoilesMinimumMax), parametres.GetValueOrDefault(CleFactionsImposees), parametres.GetValueOrDefault(CleFactionsBannies));
+        _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis), parametres.GetValueOrDefault(CleEtoilesMiniHeros), (int)Math.Clamp(Lire(parametres, CleEtoilesMiniHerosGlobal, 0), 0, FormOptionsGeneration.EtoilesMinimumMax), parametres.GetValueOrDefault(CleFactionsImposees), parametres.GetValueOrDefault(CleFactionsBannies), parametres.GetValueOrDefault(CleLienAmeActif) != ValeurFausse);
         AfficherMode();
         AfficherChoixMode();
     }
@@ -599,7 +602,7 @@ internal sealed class FormEquipes : FormBase
     private MoteurEquipes CreerMoteur()
     {
         var familles = Referentiel.Familles(_heros.Select(h => (h.Id, h.Hero.Nom)));
-        return new(_heros.Select(h => MoteurEquipes.CreerHero(h.Id, h.Hero.Etoiles, h.Hero.Classe, h.Hero.Factions, h.LienAme, h.Hero.Equipement, familles[h.Id])), _roles);
+        return new(_heros.Select(h => MoteurEquipes.CreerHero(h.Id, h.Hero.Etoiles, h.Hero.Classe, h.Hero.Factions, h.LienAme, h.Hero.Equipement, familles[h.Id])), _roles, _reglages.LienAmeActif);
     }
 
     private void RemplirGrilleHeros()
@@ -921,7 +924,7 @@ internal sealed class FormEquipes : FormBase
 
     private void OuvrirOptions()
     {
-        using var dialogue = new FormOptionsGeneration(_poids, _reglages.EtoilesMiniHerosGlobal);
+        using var dialogue = new FormOptionsGeneration(_poids, _reglages.EtoilesMiniHerosGlobal, _reglages.LienAmeActif);
         if (dialogue.ShowDialog(this) != DialogResult.OK)
         {
             return;
@@ -930,20 +933,31 @@ internal sealed class FormEquipes : FormBase
         var ancien = _poids;
         var anciensReglages = _reglages.Copier();
         var anciensMinimums = _etoilesMinimum.ToList();
-        var modifie = dialogue.Poids != _poids || dialogue.EtoilesMiniHeros != _reglages.EtoilesMiniHerosGlobal;
+        var lienAmeModifie = dialogue.LienAmeActif != _reglages.LienAmeActif;
+        var modifie = dialogue.Poids != _poids || dialogue.EtoilesMiniHeros != _reglages.EtoilesMiniHerosGlobal || lienAmeModifie;
         _poids = dialogue.Poids;
         _reglages.EtoilesMiniHerosGlobal = dialogue.EtoilesMiniHeros;
+        _reglages.LienAmeActif = dialogue.LienAmeActif;
         var existaient = false;
         if (modifie)
         {
             // Changer les options démarre une nouvelle composition : les réglages de chaque équipe repartent de zéro.
             existaient = ReinitialiserReglages();
         }
-        if (!Proteger(SauvegarderParametres))
+        var sauvegarde = Proteger(SauvegarderParametres);
+        if (!sauvegarde)
         {
             _poids = ancien;
             _reglages = anciensReglages;
             _etoilesMinimum = anciensMinimums;
+        }
+        // Le lien d'âme est lu à la construction du moteur : il faut le reconstruire, avec la valeur retenue, pour que le changement joue.
+        if (lienAmeModifie)
+        {
+            _moteur = CreerMoteur();
+        }
+        if (!sauvegarde)
+        {
             return;
         }
         if (existaient)
@@ -1108,6 +1122,7 @@ internal sealed class FormEquipes : FormBase
         BaseSqlite.EcrireParametre(CleFactionsBannies, _reglages.SerialiserFactionsBannies(), _chemin);
         BaseSqlite.EcrireParametre(CleEtoilesMiniHeros, _reglages.SerialiserEtoilesMiniHeros(), _chemin);
         BaseSqlite.EcrireParametre(CleEtoilesMiniHerosGlobal, _reglages.EtoilesMiniHerosGlobal.ToString(CultureInfo.InvariantCulture), _chemin);
+        BaseSqlite.EcrireParametre(CleLienAmeActif, _reglages.LienAmeActif ? ValeurVraie : ValeurFausse, _chemin);
         BaseSqlite.EcrireParametre(CleListeVariantes, SerialiserVariantes(_variantes), _chemin);
     }
 

@@ -31,10 +31,12 @@ internal sealed class FormOptionsGeneration : FormDialogue
 
     private readonly NumericUpDown _etoilesMiniHeros = new() { Minimum = 0, Maximum = EtoilesMinimumMax, Width = LargeurChamp };
 
-    public FormOptionsGeneration(PoidsEquipes poids, int etoilesMiniHeros)
+    private readonly CheckBox _lienAmeActif = new() { AutoSize = true };
+
+    public FormOptionsGeneration(PoidsEquipes poids, int etoilesMiniHeros, bool lienAmeActif)
         : base("Options de génération", new Size(440, 360))
     {
-        Afficher(poids, etoilesMiniHeros);
+        Afficher(poids, etoilesMiniHeros, lienAmeActif);
 
         var onglets = new TabControl { Dock = DockStyle.Fill };
         onglets.TabPages.Add(ConstruireOngletScore());
@@ -43,7 +45,7 @@ internal sealed class FormOptionsGeneration : FormDialogue
 
         var boutons = ConstruireBoutons(() => DialogResult = DialogResult.OK);
         var parDefaut = new Button { Text = LibelleValeursParDefaut, AutoSize = true };
-        parDefaut.Click += (_, _) => Afficher(PoidsEquipes.ParDefaut, 0);
+        parDefaut.Click += (_, _) => Afficher(PoidsEquipes.ParDefaut, 0, true);
         boutons.Controls.Add(parDefaut);
         Controls.Add(onglets);
         Controls.Add(boutons);
@@ -55,6 +57,9 @@ internal sealed class FormOptionsGeneration : FormDialogue
 
     /// <summary>Seuil d'étoiles par héros pour toutes les équipes ; 0 = aucun.</summary>
     public int EtoilesMiniHeros => (int)_etoilesMiniHeros.Value;
+
+    /// <summary>Faux pour un mode de jeu sans lien d'âme.</summary>
+    public bool LienAmeActif => _lienAmeActif.Checked;
 
     private static NumericUpDown ChampPoids() => new() { Minimum = 0, Maximum = PoidsMax, Width = LargeurChamp };
 
@@ -70,7 +75,7 @@ internal sealed class FormOptionsGeneration : FormDialogue
     }
 
     // L'aide reste visible sous son champ : un poids sans explication ne se règle qu'à tâtons.
-    private static void AjouterChamp(TableLayoutPanel table, string titre, NumericUpDown champ, string aide)
+    private static void AjouterChamp(TableLayoutPanel table, string titre, Control champ, string aide)
     {
         OutilsDialogue.AjouterLigne(table, titre, champ);
         var texte = new Label { Text = aide, AutoSize = true, MaximumSize = new Size(LargeurAide, 0), ForeColor = Color.DimGray, Margin = new Padding(3, 0, 3, 12) };
@@ -78,8 +83,9 @@ internal sealed class FormOptionsGeneration : FormDialogue
         table.SetColumnSpan(texte, 2);
     }
 
-    private void Afficher(PoidsEquipes poids, int etoilesMiniHeros)
+    private void Afficher(PoidsEquipes poids, int etoilesMiniHeros, bool lienAmeActif)
     {
+        _lienAmeActif.Checked = lienAmeActif;
         _poidsRoles.Value = Borner(poids.Roles);
         _poidsResonance.Value = Borner(poids.Resonance);
         _poidsEtoiles.Value = Borner(poids.Etoiles);
@@ -104,5 +110,8 @@ internal sealed class FormOptionsGeneration : FormDialogue
     });
 
     private TabPage ConstruireOngletContraintes() => ConstruireOnglet(OngletContraintes, table =>
-        AjouterChamp(table, "Étoiles mini pour les héros", _etoilesMiniHeros, "Aucun héros d'une équipe n'a moins d'étoiles que ce seuil (0 = aucun seuil). Une équipe peut le relever dans ses propres réglages, jamais le baisser."));
+    {
+        AjouterChamp(table, "Étoiles mini pour les héros", _etoilesMiniHeros, "Aucun héros d'une équipe n'a moins d'étoiles que ce seuil (0 = aucun seuil). Une équipe peut le relever dans ses propres réglages, jamais le baisser.");
+        AjouterChamp(table, "Lien d'âme actif", _lienAmeActif, "Décocher pour un mode de jeu sans lien d'âme (ex. Appel de l'aube) : un héros avec lien d'âme ne compte plus comme Ordre pour la résonance.");
+    });
 }

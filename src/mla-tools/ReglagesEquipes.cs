@@ -18,6 +18,9 @@ internal sealed class ReglagesEquipes
     /// <summary>Seuil d'étoiles par héros valable pour toutes les équipes ; 0 = aucun. Hors <see cref="Reinitialiser"/> : il n'appartient à aucune équipe.</summary>
     public int EtoilesMiniHerosGlobal { get; set; }
 
+    /// <summary>Faux dans un mode de jeu sans lien d'âme. Global comme le seuil : hors <see cref="Reinitialiser"/>.</summary>
+    public bool LienAmeActif { get; set; } = true;
+
     public IReadOnlyCollection<int> Imposes(int equipe) => Lire(_imposes, equipe);
 
     /// <summary>Seuil propre à l'équipe, sans le seuil global.</summary>
@@ -157,7 +160,7 @@ internal sealed class ReglagesEquipes
 
     public ReglagesEquipes Copier()
     {
-        var copie = new ReglagesEquipes { EtoilesMiniHerosGlobal = EtoilesMiniHerosGlobal };
+        var copie = new ReglagesEquipes { EtoilesMiniHerosGlobal = EtoilesMiniHerosGlobal, LienAmeActif = LienAmeActif };
         foreach (var (equipe, ids) in _imposes)
         {
             copie._imposes[equipe] = [.. ids];
@@ -196,9 +199,9 @@ internal sealed class ReglagesEquipes
 
     /// <summary>Valeurs issues de la base : une partie illisible ou incohérente est ignorée, le reste est gardé.</summary>
     public static ReglagesEquipes Charger(
-        string? imposes, string? bannis, string? etoilesMiniHeros = null, int etoilesMiniHerosGlobal = 0, string? factionsImposees = null, string? factionsBannies = null)
+        string? imposes, string? bannis, string? etoilesMiniHeros = null, int etoilesMiniHerosGlobal = 0, string? factionsImposees = null, string? factionsBannies = null, bool lienAmeActif = true)
     {
-        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = Math.Clamp(etoilesMiniHerosGlobal, 0, FormOptionsGeneration.EtoilesMinimumMax) };
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosGlobal = Math.Clamp(etoilesMiniHerosGlobal, 0, FormOptionsGeneration.EtoilesMinimumMax), LienAmeActif = lienAmeActif };
         foreach (var (equipe, id) in Decoder(imposes))
         {
             reglages.Imposer(equipe, id);

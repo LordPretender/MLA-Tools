@@ -210,6 +210,25 @@ public class ReglagesEquipesTests
     }
 
     [Fact]
+    public void Le_lien_d_ame_est_actif_par_defaut_et_au_chargement_sans_valeur()
+    {
+        Assert.True(new ReglagesEquipes().LienAmeActif);
+        Assert.True(ReglagesEquipes.Charger(null, null).LienAmeActif);
+    }
+
+    [Fact]
+    public void Le_lien_d_ame_inactif_est_charge_copie_et_survit_aux_reinitialisations()
+    {
+        var reglages = ReglagesEquipes.Charger(null, null, lienAmeActif: false);
+
+        reglages.ReinitialiserToutes();
+        reglages.Reinitialiser(PremiereEquipe);
+
+        Assert.False(reglages.LienAmeActif);
+        Assert.False(reglages.Copier().LienAmeActif);
+    }
+
+    [Fact]
     public void Une_faction_ne_peut_pas_etre_imposee_et_bannie_dans_la_meme_equipe()
     {
         var reglages = new ReglagesEquipes();
