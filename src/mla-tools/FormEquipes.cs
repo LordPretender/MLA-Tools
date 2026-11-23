@@ -94,6 +94,7 @@ internal sealed class FormEquipes : FormBase
 
     private readonly ComboBox _filtreLienAme = NouveauFiltre();
 
+    private readonly Label _libelleNombreEquipes = new() { Text = "Nombre d'équipes", AutoSize = true, Margin = new Padding(3, 6, 6, 0) };
     private readonly Label _libelleMode = new() { Text = "Mode", AutoSize = true, Margin = new Padding(16, 6, 6, 0) };
     private readonly ComboBox _choixMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 230 };
 
@@ -388,6 +389,8 @@ internal sealed class FormEquipes : FormBase
         generer.Click += (_, _) => GenererEquipes();
         var enregistrer = new Button { Text = "Enregistrer la composition", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
         enregistrer.Click += (_, _) => EnregistrerComposition();
+        var reinitialiser = new Button { Text = "Réinitialiser", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
+        reinitialiser.Click += (_, _) => ReinitialiserComposition();
         _nombreEquipes.ValueChanged += (_, _) =>
         {
             if (!_parametresEnChargement)
@@ -402,7 +405,7 @@ internal sealed class FormEquipes : FormBase
         _choixMode.SelectedIndexChanged += (_, _) => ChangerMode();
 
         var barre = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(8) };
-        barre.Controls.Add(new Label { Text = "Nombre d'équipes", AutoSize = true, Margin = new Padding(3, 6, 6, 0) });
+        barre.Controls.Add(_libelleNombreEquipes);
         barre.Controls.Add(_nombreEquipes);
         barre.Controls.Add(new Label { Text = "Variantes", AutoSize = true, Margin = new Padding(16, 6, 6, 0) });
         barre.Controls.Add(_nombreVariantes);
@@ -411,6 +414,7 @@ internal sealed class FormEquipes : FormBase
         AfficherChoixMode();
         barre.Controls.Add(generer);
         barre.Controls.Add(enregistrer);
+        barre.Controls.Add(reinitialiser);
         barre.Controls.Add(_avisReinitialisation);
 
         _zoneCartes.Resize += (_, _) =>
@@ -490,6 +494,7 @@ internal sealed class FormEquipes : FormBase
         {
             _barreVariantes.Visible = false;
         }
+        AfficherVerrouGeneration();
         ActualiserFiltres();
         RemplirGrilleHeros();
         AfficherCartes();
@@ -782,6 +787,47 @@ internal sealed class FormEquipes : FormBase
         var visible = (int)_nombreEquipes.Value > 1;
         _libelleMode.Visible = visible;
         _choixMode.Visible = visible;
+        AfficherVerrouGeneration();
+    }
+
+    // Une composition générée fige le nombre d'équipes et le mode : seul « Réinitialiser » repart d'une composition vierge. L'état se déduit des variantes, déjà persistées.
+    private void AfficherVerrouGeneration()
+    {
+        var modifiable = _variantes.Count == 0;
+        _libelleNombreEquipes.Enabled = modifiable;
+        _nombreEquipes.Enabled = modifiable;
+        _libelleMode.Enabled = modifiable;
+        _choixMode.Enabled = modifiable;
+    }
+
+    private void ReinitialiserComposition()
+    {
+        if (MessageBox.Show(this, "Vider les équipes, la réserve et les réglages de la composition ?", TitreApplication, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+        {
+            return;
+        }
+
+        var anciennesVariantes = _variantes;
+        var anciensReglages = _reglages.Copier();
+        var anciensMinimums = _etoilesMinimum.ToList();
+        _variantes = [];
+        ReinitialiserReglages();
+        if (!Proteger(SauvegarderParametres))
+        {
+            // Rien n'a été écrit : l'écran reste aligné sur la base.
+            _variantes = anciennesVariantes;
+            _reglages = anciensReglages;
+            _etoilesMinimum = anciensMinimums;
+            return;
+        }
+
+        _equipes = [];
+        _reserve = [];
+        _selection = null;
+        Proteger(SauvegarderRepartition);
+        _barreVariantes.Visible = false;
+        AfficherVerrouGeneration();
+        AfficherCartes();
     }
 
     private ModeGeneration ModeEffectif => MoteurEquipes.ModeEffectif(_mode, (int)_nombreEquipes.Value);
@@ -1012,6 +1058,7 @@ internal sealed class FormEquipes : FormBase
             RemplirVariantes();
             AppliquerVariante(0);
             Proteger(SauvegarderParametres);
+            AfficherVerrouGeneration();
         }
         finally
         {
