@@ -152,7 +152,11 @@ internal static class OutilsDialogue
     // L'aide reste visible sous son champ : un réglage sans explication ne se règle qu'à tâtons.
     public static void AjouterChampAvecAide(TableLayoutPanel table, string titre, Control champ, string aide)
     {
-        AjouterLigne(table, titre, champ);
+        // Ancrés à gauche seulement, libellé et champ se centrent verticalement dans la ligne : une marge fixe ne compense pas la hauteur propre d'une case à cocher.
+        table.Controls.Add(new Label { Text = titre, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(3, 3, 16, 3) });
+        champ.Anchor = AnchorStyles.Left;
+        champ.Margin = new Padding(3);
+        table.Controls.Add(champ);
         var texte = new Label { Text = aide, AutoSize = true, MaximumSize = new Size(LargeurAide, 0), ForeColor = Color.DimGray, Margin = new Padding(3, 0, 3, 12) };
         table.Controls.Add(texte);
         table.SetColumnSpan(texte, 2);

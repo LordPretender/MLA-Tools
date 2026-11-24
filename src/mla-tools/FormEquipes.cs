@@ -99,7 +99,11 @@ internal sealed class FormEquipes : FormBase
     private readonly Label _libelleMode = new() { Text = "Mode", AutoSize = true, Margin = new Padding(16, 6, 6, 0) };
     private readonly ComboBox _choixMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 230 };
 
-    private readonly Button _boutonComposition = new() { Text = "Réglages de la composition", AutoSize = true, Margin = new Padding(16, 3, 3, 3) };
+    private readonly ToolStripMenuItem _menuComposition = new("Réglages de la composition…");
+    // Le raccourci s'affiche seulement : un ContextMenuStrip hors d'un contrôle ne traite pas ShortcutKeys, ProcessCmdKey s'en charge.
+    private readonly ToolStripMenuItem _menuReinitialiser = new("Réinitialiser la composition…") { ShortcutKeyDisplayString = "Ctrl+R" };
+
+    private readonly ContextMenuStrip _menuBoutonComposition = new();
 
     private readonly Label _avisReinitialisation = new() { Text = "Réglages des équipes réinitialisés", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(16, 8, 3, 0), Visible = false };
     private readonly System.Windows.Forms.Timer _delaiAvis = new() { Interval = DureeAvisMs };
@@ -242,8 +246,20 @@ internal sealed class FormEquipes : FormBase
             _cartes.Dispose();
             _menuHeros.Dispose();
             _menuEquipe.Dispose();
+            _menuBoutonComposition.Dispose();
             _delaiAvis.Dispose();
         }
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == (Keys.Control | Keys.R))
+        {
+            ReinitialiserComposition();
+            return true;
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 
     private static TabPage NouvellePage(string titre) =>
@@ -388,13 +404,15 @@ internal sealed class FormEquipes : FormBase
     private TabPage ConstruireOngletEquipes()
     {
         var page = NouvellePage("Générateur");
-        _boutonComposition.Click += (_, _) => ReglerComposition();
         var generer = new Button { Text = "Générer", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
         generer.Click += (_, _) => GenererEquipes();
-        var enregistrer = new Button { Text = "Enregistrer la composition", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
+        var enregistrer = new ToolStripMenuItem("Enregistrer la composition");
         enregistrer.Click += (_, _) => EnregistrerComposition();
-        var reinitialiser = new Button { Text = "Réinitialiser", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
-        reinitialiser.Click += (_, _) => ReinitialiserComposition();
+        _menuComposition.Click += (_, _) => ReglerComposition();
+        _menuReinitialiser.Click += (_, _) => ReinitialiserComposition();
+        _menuBoutonComposition.Items.AddRange([_menuComposition, enregistrer, new ToolStripSeparator(), _menuReinitialiser]);
+        var composition = new Button { Text = "Composition ▾", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
+        composition.Click += (_, _) => _menuBoutonComposition.Show(composition, new Point(0, composition.Height));
         _nombreEquipes.ValueChanged += (_, _) =>
         {
             if (!_parametresEnChargement)
@@ -415,11 +433,9 @@ internal sealed class FormEquipes : FormBase
         barre.Controls.Add(_nombreVariantes);
         barre.Controls.Add(_libelleMode);
         barre.Controls.Add(_choixMode);
-        barre.Controls.Add(_boutonComposition);
         AfficherChoixMode();
         barre.Controls.Add(generer);
-        barre.Controls.Add(enregistrer);
-        barre.Controls.Add(reinitialiser);
+        barre.Controls.Add(composition);
         barre.Controls.Add(_avisReinitialisation);
 
         _zoneCartes.Resize += (_, _) =>
@@ -810,7 +826,7 @@ internal sealed class FormEquipes : FormBase
         _nombreEquipes.Enabled = modifiable;
         _libelleMode.Enabled = modifiable;
         _choixMode.Enabled = modifiable;
-        _boutonComposition.Enabled = modifiable;
+        _menuComposition.Enabled = modifiable;
     }
 
     private void ReinitialiserComposition()

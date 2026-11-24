@@ -9,7 +9,7 @@ internal sealed class FormReglageComposition : FormDialogue
     private const int LargeurChamp = 70;
 
     private readonly NumericUpDown _etoilesMiniHeros = new() { Minimum = 0, Maximum = FormOptionsGeneration.EtoilesMinimumMax, Width = LargeurChamp };
-    private readonly CheckBox _lienAmeActif = new() { AutoSize = true, Margin = new Padding(3, 6, 3, 3) };
+    private readonly CheckBox _lienAmeActif = new() { AutoSize = true };
 
     public FormReglageComposition(int etoilesMiniHeros, bool lienAmeActif)
         : base("Réglages de la composition", new Size(440, 260))
