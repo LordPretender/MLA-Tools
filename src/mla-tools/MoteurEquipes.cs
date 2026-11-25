@@ -147,9 +147,14 @@ internal sealed class MoteurEquipes
     // Sans héros de même famille, aucun échange n'a à être contrôlé : la recherche garde alors exactement son parcours d'origine.
     private readonly bool _famillesPartagees;
 
+    // Lu à la construction comme le lien d'âme : changer la valeur impose de reconstruire le moteur, dont le cache d'évaluations en dépend.
+    private readonly bool _chaosAuNiveauMoyen;
+
     /// <param name="lienAmeActif">Faux dans un mode de jeu sans lien d'âme : aucun héros n'y devient joker Ordre pour la résonance.</param>
-    public MoteurEquipes(IEnumerable<HeroMoteur> heros, IReadOnlyDictionary<string, string> roles, bool lienAmeActif = true)
+    /// <param name="chaosAuNiveauMoyen">Vrai : un héros Chaos sous la moyenne d'étoiles des autres héros de l'équipe perd son bonus ; faux : tout Chaos compte.</param>
+    public MoteurEquipes(IEnumerable<HeroMoteur> heros, IReadOnlyDictionary<string, string> roles, bool lienAmeActif = true, bool chaosAuNiveauMoyen = true)
     {
+        _chaosAuNiveauMoyen = chaosAuNiveauMoyen;
         foreach (var faction in FactionsRegulieres)
         {
             IndexerFaction(faction);
@@ -309,7 +314,7 @@ internal sealed class MoteurEquipes
             Array.Resize(ref _optionsEquipe, equipe.Length);
         }
 
-        int dps = 0, tanks = 0, soutiens = 0, etoiles = 0, chaos = 0, avecFaction = 0, secondaires = 0, moyens = 0, jokers = 0;
+        int dps = 0, tanks = 0, soutiens = 0, etoiles = 0, chaos = 0, avecFaction = 0, secondaires = 0, moyens = 0, jokers = 0, etoilesNonChaos = 0;
         foreach (var hero in equipe)
         {
             if (hero.TankSecondaire)
@@ -320,12 +325,9 @@ internal sealed class MoteurEquipes
             {
                 moyens++;
             }
-            switch (hero.IndexRole)
-            {
-                case IndexDps: dps++; break;
-                case IndexTank: tanks++; break;
-                default: soutiens++; break;
-            }
+            dps += hero.IndexRole == IndexDps ? 1 : 0;
+            tanks += hero.IndexRole == IndexTank ? 1 : 0;
+            soutiens += hero.IndexRole == IndexSoutien ? 1 : 0;
             etoiles += hero.Etoiles;
             if (hero.ChaosPur)
             {
@@ -337,18 +339,42 @@ internal sealed class MoteurEquipes
                 {
                     jokers++;
                 }
+                etoilesNonChaos += hero.Etoiles;
                 _optionsEquipe[avecFaction++] = hero.Options;
             }
         }
+        if (_chaosAuNiveauMoyen && chaos > 0)
+        {
+            chaos = ChaosRetenus(equipe, avecFaction, etoilesNonChaos);
+        }
 
         var penalite = Math.Abs(dps - DpsCible) + PenaliteFront(tanks, secondaires, moyens) + Math.Max(0, 1 - soutiens);
+        return new Mesure(dps, tanks, secondaires, soutiens, etoiles, penalite, chaos, MeilleureResonance(avecFaction), avecFaction > 0 && jokers == avecFaction);
+    }
+
+    // Recherche exhaustive : chaque héros choisit une de ses factions, on garde la combinaison la mieux payée.
+    private Resonance MeilleureResonance(int avecFaction)
+    {
         var resonance = new Resonance(0, 0, -1, -1);
         if (avecFaction >= MinimumResonance)
         {
-            // Recherche exhaustive : chaque héros choisit une de ses factions, on garde la combinaison la mieux payée.
             Explorer(0, avecFaction, ref resonance);
         }
-        return new Mesure(dps, tanks, secondaires, soutiens, etoiles, penalite, chaos, resonance, avecFaction > 0 && jokers == avecFaction);
+        return resonance;
+    }
+
+    // Chaque Chaos se compare aux seuls non-Chaos, en entiers (étoiles × effectif ≥ somme) pour éviter une moyenne décimale ; sans non-Chaos, rien à comparer.
+    private static int ChaosRetenus(ReadOnlySpan<InfoHero> equipe, int nonChaos, int etoilesNonChaos)
+    {
+        var retenus = 0;
+        foreach (var hero in equipe)
+        {
+            if (hero.ChaosPur && hero.Etoiles * nonChaos >= etoilesNonChaos)
+            {
+                retenus++;
+            }
+        }
+        return retenus;
     }
 
     // Un tank obligatoire, puis un second front : autre tank, tank secondaire ou héros d'équipement moyen.
@@ -455,7 +481,7 @@ internal sealed class MoteurEquipes
 
     private InfoHero[] MeilleureEquipe(List<InfoHero> restants, PoidsEquipes poids)
     {
-        var reservoir = Reduire(restants);
+        var reservoir = Reduire(restants, _chaosAuNiveauMoyen);
         var taille = Math.Min(TailleEquipe, reservoir.Select(h => h.Famille).Distinct().Count());
         var courante = new InfoHero[taille];
         var meilleure = new InfoHero[taille];
@@ -493,16 +519,21 @@ internal sealed class MoteurEquipes
     // et de même équipement (le front en dépend), de même nature Chaos (son bonus n'est pas une faction), aux étoiles au moins égales et aux factions au moins aussi nombreuses, l'un d'eux est forcément hors de l'équipe
     // et la remplace sans rien perdre. Les dominateurs se comptent par famille : quatre coéquipiers bloquent au plus quatre familles, donc cinq familles
     // dominantes laissent toujours un remplaçant sans doublon. Au-delà de ReservoirMaximum, on ne garde que les mieux dotés en étoiles.
-    private static List<InfoHero> Reduire(List<InfoHero> restants)
+    // Quand le Chaos doit atteindre la moyenne de l'équipe et qu'un Chaos pur est en jeu, un non-Chaos plus étoilé n'est plus forcément meilleur (il relève la moyenne) :
+    // un non-Chaos n'est alors dominé qu'à étoiles égales, ce qui laisse la moyenne inchangée. Sans Chaos pur, la case est sans effet et l'élagage reste celui d'origine.
+    private static List<InfoHero> Reduire(List<InfoHero> restants, bool chaosAuNiveauMoyen)
     {
+        var moyenneEnJeu = chaosAuNiveauMoyen && restants.Any(h => h.ChaosPur);
         var gardes = new List<InfoHero>();
         for (var i = 0; i < restants.Count; i++)
         {
             var hero = restants[i];
+            var etoilesEgales = moyenneEnJeu && !hero.ChaosPur;
             var dominateurs = new HashSet<int>();
             for (var j = 0; j < i && dominateurs.Count < TailleEquipe; j++)
             {
-                if (restants[j].IndexRole == hero.IndexRole && restants[j].Equipement == hero.Equipement && restants[j].ChaosPur == hero.ChaosPur && (restants[j].Masque & hero.Masque) == hero.Masque)
+                if (restants[j].IndexRole == hero.IndexRole && restants[j].Equipement == hero.Equipement && restants[j].ChaosPur == hero.ChaosPur && (restants[j].Masque & hero.Masque) == hero.Masque
+                    && (!etoilesEgales || restants[j].Etoiles == hero.Etoiles))
                 {
                     dominateurs.Add(restants[j].Famille);
                 }

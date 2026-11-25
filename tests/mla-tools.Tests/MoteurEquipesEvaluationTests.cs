@@ -331,6 +331,62 @@ public class MoteurEquipesEvaluationTests
         Assert.Null(exception);
     }
 
+    private static HeroMoteur ChaosAvecEtoiles(int id, int etoiles) => Hero(id, ClasseDps, [Referentiel.FactionChaos], etoiles);
+
+    private static HeroMoteur[] AutresHeros(params int[] etoiles) =>
+        [.. etoiles.Select((e, i) => Hero(i + 1, ClasseDps, [FactionX], e))];
+
+    [Theory]
+    [InlineData(6, 1)]
+    [InlineData(5, 1)]
+    [InlineData(4, 0)]
+    public void Un_chaos_ne_compte_que_s_il_atteint_la_moyenne_des_autres_heros(int etoilesChaos, int chaosAttendu)
+    {
+        HeroMoteur[] equipe = [.. AutresHeros(5, 5, 5, 5), ChaosAvecEtoiles(100, etoilesChaos)];
+
+        Assert.Equal(chaosAttendu, EvaluerEquipe(equipe).Chaos);
+    }
+
+    // Moyenne de 4,5 : la comparaison se fait sans décimales (étoiles × effectif ≥ somme).
+    [Theory]
+    [InlineData(5, 1)]
+    [InlineData(4, 0)]
+    public void La_moyenne_n_est_pas_arrondie(int etoilesChaos, int chaosAttendu)
+    {
+        HeroMoteur[] equipe = [.. AutresHeros(5, 4), ChaosAvecEtoiles(100, etoilesChaos)];
+
+        Assert.Equal(chaosAttendu, EvaluerEquipe(equipe).Chaos);
+    }
+
+    [Fact]
+    public void Un_chaos_sous_la_moyenne_ne_compte_pas_dans_la_description_ni_les_paliers()
+    {
+        HeroMoteur[] equipe = [.. AutresHeros(5, 5, 5), ChaosAvecEtoiles(100, 5), ChaosAvecEtoiles(101, 4)];
+
+        var evaluation = EvaluerEquipe(equipe);
+
+        Assert.Equal(1, evaluation.Chaos);
+        Assert.EndsWith($"(+1 Chaos : {BonusChaosDefense})", evaluation.Description);
+    }
+
+    [Fact]
+    public void Des_chaos_sans_autre_heros_comptent_quelles_que_soient_leurs_etoiles()
+    {
+        HeroMoteur[] equipe = [ChaosAvecEtoiles(1, 1), ChaosAvecEtoiles(2, 5)];
+
+        Assert.Equal(2, EvaluerEquipe(equipe).Chaos);
+    }
+
+    [Fact]
+    public void Option_decochee_tout_chaos_compte()
+    {
+        HeroMoteur[] equipe = [.. AutresHeros(5, 5, 5, 5), ChaosAvecEtoiles(100, 1)];
+
+        var evaluation = new MoteurEquipes(equipe, Roles, chaosAuNiveauMoyen: false).Evaluer([.. equipe.Select(h => h.Id)]);
+
+        Assert.Equal(1, evaluation.Chaos);
+    }
+
     [Fact]
     public void Plus_de_soixante_quatre_factions_distinctes_levent_une_exception()
     {

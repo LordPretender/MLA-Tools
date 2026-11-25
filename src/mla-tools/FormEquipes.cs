@@ -41,6 +41,7 @@ internal sealed class FormEquipes : FormBase
     // La clé garde son ancien nom « global » : la renommer ferait perdre la valeur déjà enregistrée.
     private const string CleEtoilesMiniHerosComposition = "etoiles_mini_heros_global";
     private const string CleLienAmeActif = "lien_ame_actif";
+    private const string CleChaosNiveauMoyen = "chaos_niveau_moyen";
     private const string ValeurVraie = "1";
     private const string ValeurFausse = "0";
     private const string CleVariantes = "variantes";
@@ -154,6 +155,7 @@ internal sealed class FormEquipes : FormBase
     private Dictionary<string, string> _roles = [];
     private MoteurEquipes _moteur = new([], new Dictionary<string, string>());
     private PoidsEquipes _poids = PoidsEquipes.ParDefaut;
+    private bool _chaosAuNiveauMoyen = FormOptionsGeneration.ChaosAuNiveauMoyenParDefaut;
 
     private ModeGeneration _mode = ModeGeneration.MeilleureEquipeDAbord;
     // Un minimum par équipe, rang = index ; peut dépasser le nombre d'équipes affichées pour garder les valeurs si on en retire.
@@ -579,6 +581,10 @@ internal sealed class FormEquipes : FormBase
             LirePoids(parametres, CleChaos1, _poids.Chaos1),
             LirePoids(parametres, CleChaos2, _poids.Chaos2),
             LirePoids(parametres, CleChaos3, _poids.Chaos3));
+        // Clé absente (base d'avant l'option) : la valeur par défaut, cochée.
+        _chaosAuNiveauMoyen = parametres.TryGetValue(CleChaosNiveauMoyen, out var chaosNiveauMoyen)
+            ? chaosNiveauMoyen != ValeurFausse
+            : FormOptionsGeneration.ChaosAuNiveauMoyenParDefaut;
         _mode = Lire(parametres, CleMode, (decimal)_mode) == (decimal)ModeGeneration.SommeMaximale
             ? ModeGeneration.SommeMaximale
             : ModeGeneration.MeilleureEquipeDAbord;
@@ -628,7 +634,7 @@ internal sealed class FormEquipes : FormBase
     private MoteurEquipes CreerMoteur()
     {
         var familles = Referentiel.Familles(_heros.Select(h => (h.Id, h.Hero.Nom)));
-        return new(_heros.Select(h => MoteurEquipes.CreerHero(h.Id, h.Hero.Etoiles, h.Hero.Classe, h.Hero.Factions, h.LienAme, h.Hero.Equipement, familles[h.Id])), _roles, _reglages.LienAmeActif);
+        return new(_heros.Select(h => MoteurEquipes.CreerHero(h.Id, h.Hero.Etoiles, h.Hero.Classe, h.Hero.Factions, h.LienAme, h.Hero.Equipement, familles[h.Id])), _roles, _reglages.LienAmeActif, _chaosAuNiveauMoyen);
     }
 
     private void RemplirGrilleHeros()
@@ -1035,13 +1041,15 @@ internal sealed class FormEquipes : FormBase
 
     private void OuvrirOptions()
     {
-        using var dialogue = new FormOptionsGeneration(_poids);
+        using var dialogue = new FormOptionsGeneration(_poids, _chaosAuNiveauMoyen);
         if (dialogue.ShowDialog(this) != DialogResult.OK)
         {
             return;
         }
 
         var ancien = _poids;
+        var ancienChaosNiveauMoyen = _chaosAuNiveauMoyen;
+        _chaosAuNiveauMoyen = dialogue.ChaosAuNiveauMoyen;
         var anciensReglages = _reglages.Copier();
         var anciensMinimums = _etoilesMinimum.ToList();
         var existaient = false;
@@ -1054,9 +1062,15 @@ internal sealed class FormEquipes : FormBase
         if (!Proteger(SauvegarderParametres))
         {
             _poids = ancien;
+            _chaosAuNiveauMoyen = ancienChaosNiveauMoyen;
             _reglages = anciensReglages;
             _etoilesMinimum = anciensMinimums;
             return;
+        }
+        // Le moteur lit l'option à sa construction : un changement impose de le reconstruire pour qu'il joue.
+        if (ancienChaosNiveauMoyen != _chaosAuNiveauMoyen)
+        {
+            _moteur = CreerMoteur();
         }
         if (existaient)
         {
@@ -1222,6 +1236,7 @@ internal sealed class FormEquipes : FormBase
         BaseSqlite.EcrireParametre(CleEtoilesMiniHeros, _reglages.SerialiserEtoilesMiniHeros(), _chemin);
         BaseSqlite.EcrireParametre(CleEtoilesMiniHerosComposition, _reglages.EtoilesMiniHerosComposition.ToString(CultureInfo.InvariantCulture), _chemin);
         BaseSqlite.EcrireParametre(CleLienAmeActif, _reglages.LienAmeActif ? ValeurVraie : ValeurFausse, _chemin);
+        BaseSqlite.EcrireParametre(CleChaosNiveauMoyen, _chaosAuNiveauMoyen ? ValeurVraie : ValeurFausse, _chemin);
         BaseSqlite.EcrireParametre(CleListeVariantes, SerialiserVariantes(_variantes), _chemin);
     }
 

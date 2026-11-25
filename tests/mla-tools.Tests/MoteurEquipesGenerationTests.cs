@@ -138,6 +138,29 @@ public class MoteurEquipesGenerationTests
         Assert.Contains(IdChaos, equipe);
     }
 
+    // Cinq héros de même faction à 5 étoiles contre quatre d'entre eux plus un Chaos à 1 étoile : le bonus Chaos (15) ferait gagner la seconde équipe (76 contre 75).
+    private static HeroMoteur[] CinqFortsEtUnChaosFaible() =>
+        [.. Enumerable.Range(1, 5).Select(id => Hero(id, ClasseDps, [FactionX], etoiles: 5)), Hero(IdChaos, ClasseDps, [Referentiel.FactionChaos])];
+
+    [Fact]
+    public void Un_chaos_faible_n_est_plus_prefere_a_un_cinquieme_heros_fort()
+    {
+        var equipe = Variantes(Moteur(CinqFortsEtUnChaosFaible()), 1, ModeGeneration.MeilleureEquipeDAbord)[0].Equipes[0];
+
+        Assert.DoesNotContain(IdChaos, equipe);
+    }
+
+    [Fact]
+    public void Option_decochee_un_chaos_faible_reste_prefere()
+    {
+        var heros = CinqFortsEtUnChaosFaible();
+        var moteur = new MoteurEquipes(heros, Roles, chaosAuNiveauMoyen: false);
+
+        var equipe = Variantes(moteur, 1, ModeGeneration.MeilleureEquipeDAbord)[0].Equipes[0];
+
+        Assert.Contains(IdChaos, equipe);
+    }
+
     [Fact]
     public void Un_chaos_est_prefere_a_un_cinquieme_heros_d_un_autre_type()
     {
