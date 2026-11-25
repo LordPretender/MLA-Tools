@@ -24,11 +24,14 @@ public class BaseSqliteCompositionsTests : IDisposable
     private const string RoleTank = "Tank";
 
     private const string CleTest = "cle_test";
+    private const string CleTest2 = "cle_test_2";
     private const string ValeurUne = "une";
     private const string ValeurDeux = "deux";
     private const string PorteeTest = "portee_test";
     private const string ZoneNomA = "ZoneA";
     private const string ZoneNomB = "ZoneB";
+
+    private static readonly Dictionary<string, string> ReglagesTest = new() { [CleTest] = ValeurUne };
 
     private readonly BaseTemporaire _base = new();
 
@@ -138,6 +141,55 @@ public class BaseSqliteCompositionsTests : IDisposable
         Assert.Equal(gardee, Assert.Single(BaseSqlite.ListerCompositions(_base.Chemin)).Id);
         Assert.Empty(BaseSqlite.LireComposition(supprimee, _base.Chemin));
         Assert.Single(BaseSqlite.LireComposition(gardee, _base.Chemin));
+    }
+
+    [Fact]
+    public void CreerComposition_AvecReglages_LesRestitue()
+    {
+        var reglages = new Dictionary<string, string> { [CleTest] = ValeurUne, [CleTest2] = ValeurDeux };
+
+        var id = BaseSqlite.CreerComposition(NomAlpha, [], 0, _base.Chemin, reglages);
+
+        Assert.Equal(reglages, BaseSqlite.LireReglagesComposition(id, _base.Chemin));
+    }
+
+    [Fact]
+    public void CreerComposition_SansReglages_NEnRestitueAucun()
+    {
+        var id = BaseSqlite.CreerComposition(NomAlpha, [], 0, _base.Chemin);
+
+        Assert.Empty(BaseSqlite.LireReglagesComposition(id, _base.Chemin));
+    }
+
+    [Fact]
+    public void LireReglagesComposition_NeMelangePasLesCompositions()
+    {
+        var alpha = BaseSqlite.CreerComposition(NomAlpha, [], 0, _base.Chemin, ReglagesTest);
+        var beta = BaseSqlite.CreerComposition(NomBeta, [], 0, _base.Chemin, new Dictionary<string, string> { [CleTest] = ValeurDeux });
+
+        Assert.Equal(ValeurUne, BaseSqlite.LireReglagesComposition(alpha, _base.Chemin)[CleTest]);
+        Assert.Equal(ValeurDeux, BaseSqlite.LireReglagesComposition(beta, _base.Chemin)[CleTest]);
+    }
+
+    [Fact]
+    public void SupprimerComposition_RetireSesReglages()
+    {
+        var id = BaseSqlite.CreerComposition(NomAlpha, [], 0, _base.Chemin, ReglagesTest);
+
+        BaseSqlite.SupprimerComposition(id, _base.Chemin);
+
+        Assert.Empty(BaseSqlite.LireReglagesComposition(id, _base.Chemin));
+    }
+
+    [Fact]
+    public void DupliquerComposition_CopieLesReglages()
+    {
+        var original = BaseSqlite.CreerComposition(NomAlpha, [], 0, _base.Chemin, ReglagesTest);
+
+        var copie = BaseSqlite.DupliquerComposition(original, NomCopie, _base.Chemin);
+
+        Assert.Equal(ReglagesTest, BaseSqlite.LireReglagesComposition(copie, _base.Chemin));
+        Assert.Equal(ReglagesTest, BaseSqlite.LireReglagesComposition(original, _base.Chemin));
     }
 
     [Fact]

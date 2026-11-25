@@ -5,7 +5,8 @@ namespace MlaTools.Tests;
 
 public class BaseSqliteMigrationTests : IDisposable
 {
-    private const int VersionCourante = 5;
+    private const int VersionCourante = 6;
+    private const int VersionAvantReglages = 5;
     private const string ClasseTank = "Tank";
     private const string RoleTank = "Tank";
     private const string ClasseSupport = "Support";
@@ -83,6 +84,30 @@ public class BaseSqliteMigrationTests : IDisposable
 
         Assert.Equal(3, nombres[CompositionTroisEquipes]);
         Assert.Equal(0, nombres[CompositionVide]);
+    }
+
+    [Fact]
+    public void BaseSansTableDeReglages_LaCreeEtUneCompositionAncienneN_EnAAucun()
+    {
+        _base.ExecuterSql($"""
+            {SchemaHerosAncien}
+            CREATE TABLE compositions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nom TEXT NOT NULL,
+                nom_norme TEXT NOT NULL UNIQUE,
+                nombre_equipes INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE compositions_heros (
+                composition_id INTEGER NOT NULL REFERENCES compositions(id) ON DELETE CASCADE,
+                hero_id INTEGER NOT NULL REFERENCES heros(id) ON DELETE CASCADE,
+                equipe INTEGER NULL,
+                position INTEGER NOT NULL,
+                PRIMARY KEY (composition_id, hero_id));
+            INSERT INTO compositions(id, nom, nom_norme) VALUES(1, '{CompositionVide}', '{CompositionVide}');
+            PRAGMA user_version = {VersionAvantReglages};
+            """);
+
+        Assert.Empty(BaseSqlite.LireReglagesComposition(1, _base.Chemin));
+        Assert.Equal(VersionCourante, _base.LireVersion());
     }
 
     [Fact]

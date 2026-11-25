@@ -139,7 +139,7 @@ internal static class BaseSqlite
     private const string ColonneDateMaj = "date_maj";
     // Heure locale en texte : la colonne se lit et se trie sans conversion de fuseau.
     private const string FormatDateMaj = "yyyy-MM-dd HH:mm:ss";
-    private const int VersionSchema = 5;
+    private const int VersionSchema = 6;
     // Identifiant qu'aucune composition ne porte : « aucune composition à ignorer » dans la recherche d'un nom pris.
     private const int IdAucun = -1;
 
@@ -176,6 +176,11 @@ internal static class BaseSqlite
             equipe INTEGER NULL,
             position INTEGER NOT NULL,
             PRIMARY KEY (composition_id, hero_id));
+        CREATE TABLE IF NOT EXISTS compositions_reglages (
+            composition_id INTEGER NOT NULL REFERENCES compositions(id) ON DELETE CASCADE,
+            cle TEXT NOT NULL,
+            valeur TEXT NOT NULL,
+            PRIMARY KEY (composition_id, cle));
         CREATE TABLE IF NOT EXISTS parametres (
             cle TEXT PRIMARY KEY,
             valeur TEXT NOT NULL);
@@ -357,14 +362,20 @@ internal static class BaseSqlite
         return Convert.ToInt32(commande.ExecuteScalar()) > 0;
     }
 
-    public static int CreerComposition(string nom, IEnumerable<Affectation> affectations, int nombreEquipes, string chemin)
+    /// <param name="reglages">Instantané des réglages de génération (clés de <c>parametres</c>) ; null quand la composition n'en embarque pas.</param>
+    public static int CreerComposition(string nom, IEnumerable<Affectation> affectations, int nombreEquipes, string chemin, IReadOnlyDictionary<string, string>? reglages = null)
     {
         using var connexion = Ouvrir(chemin);
         using var transaction = connexion.BeginTransaction();
         var id = InsererComposition(connexion, transaction, nom, affectations, nombreEquipes);
+        EcrireReglagesComposition(connexion, transaction, id, reglages ?? new Dictionary<string, string>());
         transaction.Commit();
         return id;
     }
+
+    /// <summary>Vide quand la composition n'embarque aucun réglage (enregistrée avant cette fonction).</summary>
+    public static Dictionary<string, string> LireReglagesComposition(int id, string chemin) =>
+        LireDictionnaire(chemin, "SELECT cle, valeur FROM compositions_reglages WHERE composition_id = $id", ("$id", id));
 
     public static void RenommerComposition(int id, string nom, string chemin)
     {
@@ -391,6 +402,10 @@ internal static class BaseSqlite
         using var commande = Creer(connexion, transaction, "SELECT nombre_equipes FROM compositions WHERE id = $id", ("$id", id));
         var nombreEquipes = Convert.ToInt32(commande.ExecuteScalar());
         var copie = InsererComposition(connexion, transaction, nouveauNom, LireLignesComposition(connexion, transaction, id), nombreEquipes);
+        // La copie garde les réglages de l'originale : sinon elle les perdrait sans que rien ne le dise.
+        Executer(connexion, transaction,
+            "INSERT INTO compositions_reglages(composition_id, cle, valeur) SELECT $copie, cle, valeur FROM compositions_reglages WHERE composition_id = $id",
+            ("$copie", copie), ("$id", id));
         transaction.Commit();
         return copie;
     }
@@ -647,10 +662,20 @@ internal static class BaseSqlite
             "INSERT INTO parametres(cle, valeur) VALUES($cle, $valeur) ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur",
             ("$cle", cle), ("$valeur", valeur));
 
-    private static Dictionary<string, string> LireDictionnaire(string chemin, string requete)
+    private static void EcrireReglagesComposition(SqliteConnection connexion, SqliteTransaction transaction, int id, IReadOnlyDictionary<string, string> reglages)
+    {
+        foreach (var (cle, valeur) in reglages)
+        {
+            Executer(connexion, transaction,
+                "INSERT INTO compositions_reglages(composition_id, cle, valeur) VALUES($id, $cle, $valeur)",
+                ("$id", id), ("$cle", cle), ("$valeur", valeur));
+        }
+    }
+
+    private static Dictionary<string, string> LireDictionnaire(string chemin, string requete, params (string Nom, object? Valeur)[] parametres)
     {
         using var connexion = Ouvrir(chemin);
-        using var commande = Creer(connexion, null, requete);
+        using var commande = Creer(connexion, null, requete, parametres);
         using var lecteur = commande.ExecuteReader();
 
         var resultat = new Dictionary<string, string>();
