@@ -31,19 +31,7 @@ internal sealed class FormEquipes : FormBase
     private const string CleChaos2 = "poids_chaos2";
     private const string CleChaos3 = "poids_chaos3";
     private const string CleMode = "mode_generation";
-    private const string CleEtoilesMinimum = "etoiles_min";
-    private const char SeparateurMinimums = ',';
-    private const string CleHerosImposes = "heros_imposes";
-    private const string CleHerosBannis = "heros_bannis";
-    private const string CleFactionsImposees = "factions_imposees";
-    private const string CleFactionsBannies = "factions_bannies";
-    private const string CleEtoilesMiniHeros = "etoiles_mini_heros";
-    // La clé garde son ancien nom « global » : la renommer ferait perdre la valeur déjà enregistrée.
-    private const string CleEtoilesMiniHerosComposition = "etoiles_mini_heros_global";
-    private const string CleLienAmeActif = "lien_ame_actif";
     private const string CleChaosNiveauMoyen = "chaos_niveau_moyen";
-    private const string ValeurVraie = "1";
-    private const string ValeurFausse = "0";
     private const string CleVariantes = "variantes";
     private const int VariantesParDefaut = 5;
     private const int VariantesMax = 20;
@@ -583,27 +571,17 @@ internal sealed class FormEquipes : FormBase
             LirePoids(parametres, CleChaos3, _poids.Chaos3));
         // Clé absente (base d'avant l'option) : la valeur par défaut, cochée.
         _chaosAuNiveauMoyen = parametres.TryGetValue(CleChaosNiveauMoyen, out var chaosNiveauMoyen)
-            ? chaosNiveauMoyen != ValeurFausse
+            ? chaosNiveauMoyen != ReglagesEquipes.ValeurFausse
             : FormOptionsGeneration.ChaosAuNiveauMoyenParDefaut;
         _mode = Lire(parametres, CleMode, (decimal)_mode) == (decimal)ModeGeneration.SommeMaximale
             ? ModeGeneration.SommeMaximale
             : ModeGeneration.MeilleureEquipeDAbord;
-        _etoilesMinimum = LireMinimums(parametres);
-        _reglages = ReglagesEquipes.Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis), parametres.GetValueOrDefault(CleEtoilesMiniHeros), (int)Math.Clamp(Lire(parametres, CleEtoilesMiniHerosComposition, 0), 0, FormOptionsGeneration.EtoilesMinimumMax), parametres.GetValueOrDefault(CleFactionsImposees), parametres.GetValueOrDefault(CleFactionsBannies), parametres.GetValueOrDefault(CleLienAmeActif) != ValeurFausse);
+        // Valeur absente : on garde les minimums courants.
+        _etoilesMinimum = ReglagesEquipes.LireMinimums(parametres) ?? _etoilesMinimum;
+        _reglages = ReglagesEquipes.DepuisParametres(parametres);
         AfficherMode();
         AfficherChoixMode();
     }
-
-    // Valeur absente : on garde les minimums courants ; valeur illisible ou hors bornes : 0 pour l'équipe concernée.
-    private List<int> LireMinimums(IReadOnlyDictionary<string, string> parametres) =>
-        parametres.TryGetValue(CleEtoilesMinimum, out var texte)
-            ? [.. texte.Split(SeparateurMinimums).Select(LireMinimum)]
-            : _etoilesMinimum;
-
-    private static int LireMinimum(string texte) =>
-        int.TryParse(texte, NumberStyles.None, CultureInfo.InvariantCulture, out var valeur)
-            ? Math.Min(valeur, FormOptionsGeneration.EtoilesMinimumMax)
-            : 0;
 
     private static decimal Lire(IReadOnlyDictionary<string, string> parametres, string cle, decimal parDefaut) =>
         parametres.TryGetValue(cle, out var texte) && decimal.TryParse(texte, NumberStyles.Number, CultureInfo.InvariantCulture, out var valeur)
@@ -782,7 +760,7 @@ internal sealed class FormEquipes : FormBase
         var criteres = _reglages.Resume(equipe).ToList();
         if (ModeEffectif == ModeGeneration.MeilleureEquipeDAbord && Minimum(equipe) > 0)
         {
-            criteres.Add($"équipe ≥ {Minimum(equipe)} étoiles");
+            criteres.Add(ReglagesEquipes.LibelleEtoilesEquipe(Minimum(equipe)));
         }
         return criteres.Count > 0 ? string.Join(", ", criteres) : null;
     }
@@ -1204,7 +1182,8 @@ internal sealed class FormEquipes : FormBase
 
         // Copie figée : la composition enregistrée ne suit pas les générations ni les échanges suivants.
         var nomComposition = formulaire.Resultat!;
-        if (Proteger(() => BaseSqlite.CreerComposition(nomComposition, ConstruireAffectations(), _equipes.Count, _chemin)))
+        var reglages = _reglages.VersParametres(_etoilesMinimum);
+        if (Proteger(() => BaseSqlite.CreerComposition(nomComposition, ConstruireAffectations(), _equipes.Count, _chemin, reglages)))
         {
             MessageBox.Show(this, $"Composition « {nomComposition} » enregistrée.", TitreApplication);
         }
@@ -1228,15 +1207,11 @@ internal sealed class FormEquipes : FormBase
         {
             BaseSqlite.EcrireParametre(cle, valeur.ToString(CultureInfo.InvariantCulture), _chemin);
         }
-        BaseSqlite.EcrireParametre(CleEtoilesMinimum, string.Join(SeparateurMinimums, _etoilesMinimum), _chemin);
-        BaseSqlite.EcrireParametre(CleHerosImposes, _reglages.SerialiserImposes(), _chemin);
-        BaseSqlite.EcrireParametre(CleHerosBannis, _reglages.SerialiserBannis(), _chemin);
-        BaseSqlite.EcrireParametre(CleFactionsImposees, _reglages.SerialiserFactionsImposees(), _chemin);
-        BaseSqlite.EcrireParametre(CleFactionsBannies, _reglages.SerialiserFactionsBannies(), _chemin);
-        BaseSqlite.EcrireParametre(CleEtoilesMiniHeros, _reglages.SerialiserEtoilesMiniHeros(), _chemin);
-        BaseSqlite.EcrireParametre(CleEtoilesMiniHerosComposition, _reglages.EtoilesMiniHerosComposition.ToString(CultureInfo.InvariantCulture), _chemin);
-        BaseSqlite.EcrireParametre(CleLienAmeActif, _reglages.LienAmeActif ? ValeurVraie : ValeurFausse, _chemin);
-        BaseSqlite.EcrireParametre(CleChaosNiveauMoyen, _chaosAuNiveauMoyen ? ValeurVraie : ValeurFausse, _chemin);
+        foreach (var (cle, valeur) in _reglages.VersParametres(_etoilesMinimum))
+        {
+            BaseSqlite.EcrireParametre(cle, valeur, _chemin);
+        }
+        BaseSqlite.EcrireParametre(CleChaosNiveauMoyen, _chaosAuNiveauMoyen ? ReglagesEquipes.ValeurVraie : ReglagesEquipes.ValeurFausse, _chemin);
         BaseSqlite.EcrireParametre(CleListeVariantes, SerialiserVariantes(_variantes), _chemin);
     }
 

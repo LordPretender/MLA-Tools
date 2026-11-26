@@ -13,6 +13,7 @@ public class ReglagesEquipesTests
     private const int SeuilEquipeHaut = 9;
     private static readonly string FactionA = Referentiel.FactionsRegulieres[0];
     private static readonly string FactionB = Referentiel.FactionsRegulieres[1];
+    private static readonly Dictionary<string, string> AucunParametre = [];
 
     [Fact]
     public void Un_heros_ne_peut_pas_etre_impose_a_deux_equipes()
@@ -359,5 +360,71 @@ public class ReglagesEquipesTests
 
         Assert.Equal(SeuilGlobal, reglages.EtoilesMiniHerosComposition);
         Assert.False(reglages.LienAmeActif);
+    }
+
+    [Fact]
+    public void L_instantane_contient_les_huit_cles_meme_sans_reglage()
+    {
+        var instantane = new ReglagesEquipes().VersParametres([]);
+
+        Assert.Equal(
+            [
+                ReglagesEquipes.CleEtoilesMinimum, ReglagesEquipes.CleEtoilesMiniHeros, ReglagesEquipes.CleEtoilesMiniHerosComposition,
+                ReglagesEquipes.CleFactionsBannies, ReglagesEquipes.CleFactionsImposees, ReglagesEquipes.CleHerosBannis,
+                ReglagesEquipes.CleHerosImposes, ReglagesEquipes.CleLienAmeActif,
+            ],
+            instantane.Keys.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void L_instantane_se_relit_a_l_identique()
+    {
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosComposition = SeuilGlobal, LienAmeActif = false };
+        reglages.Imposer(PremiereEquipe, Heros);
+        reglages.Bannir(SecondeEquipe, Heros + 1);
+        reglages.ImposerFaction(PremiereEquipe, FactionA);
+        reglages.BannirFaction(SecondeEquipe, FactionB);
+        reglages.FixerEtoilesMiniHeros(SecondeEquipe, SeuilHeros);
+        List<int> minimums = [0, SeuilEquipeHaut];
+        var instantane = reglages.VersParametres(minimums);
+
+        var relu = ReglagesEquipes.DepuisParametres(instantane);
+
+        Assert.Equal(minimums, ReglagesEquipes.LireMinimums(instantane));
+        Assert.Equal(instantane, relu.VersParametres(minimums));
+    }
+
+    [Fact]
+    public void Les_minimums_absents_sont_null_et_les_valeurs_illisibles_ou_hors_borne_sont_ignorees_ou_ramenees_au_maximum()
+    {
+        Assert.Null(ReglagesEquipes.LireMinimums(AucunParametre));
+        Assert.Equal(
+            [0, FormOptionsGeneration.EtoilesMinimumMax],
+            ReglagesEquipes.LireMinimums(new Dictionary<string, string> { [ReglagesEquipes.CleEtoilesMinimum] = "abc,9999" }));
+    }
+
+    [Fact]
+    public void Un_instantane_vide_se_decrit_comme_sans_reglage_enregistre() =>
+        Assert.Equal([ReglagesEquipes.AucunReglageEnregistre], ReglagesEquipes.Decrire(AucunParametre, NombreEquipes, _ => null));
+
+    [Fact]
+    public void La_description_cite_chaque_niveau_et_ignore_un_heros_disparu()
+    {
+        const string NomHero = "Alucard";
+        var reglages = new ReglagesEquipes { EtoilesMiniHerosComposition = SeuilGlobal };
+        reglages.Imposer(PremiereEquipe, Heros);
+        reglages.Bannir(PremiereEquipe, Heros + 1);
+        reglages.BannirFaction(PremiereEquipe, FactionB);
+        reglages.FixerEtoilesMiniHeros(PremiereEquipe, SeuilHeros);
+
+        var lignes = ReglagesEquipes.Decrire(reglages.VersParametres([SeuilEquipeHaut]), NombreEquipes, id => id == Heros ? NomHero : null);
+
+        Assert.Equal(
+            [
+                $"Composition : lien d'âme actif · héros ≥ {SeuilGlobal} étoiles",
+                $"Équipe 1 : équipe ≥ {SeuilEquipeHaut} étoiles · héros ≥ {SeuilHeros} étoiles · héros imposés : {NomHero} · factions bannies : {FactionB}",
+                "Équipe 2 : aucun réglage",
+            ],
+            lignes);
     }
 }

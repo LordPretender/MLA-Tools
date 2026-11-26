@@ -8,6 +8,20 @@ internal sealed class ReglagesEquipes
     private const char SeparateurEquipes = ';';
     private const char SeparateurRangEtIds = ':';
     private const char SeparateurIds = ',';
+    private const char SeparateurMinimums = ',';
+
+    // Clés communes à la table parametres (réglages en cours) et à l'instantané embarqué dans une composition.
+    public const string CleEtoilesMinimum = "etoiles_min";
+    public const string CleHerosImposes = "heros_imposes";
+    public const string CleHerosBannis = "heros_bannis";
+    public const string CleFactionsImposees = "factions_imposees";
+    public const string CleFactionsBannies = "factions_bannies";
+    public const string CleEtoilesMiniHeros = "etoiles_mini_heros";
+    // La clé garde son ancien nom « global » : la renommer ferait perdre la valeur déjà enregistrée.
+    public const string CleEtoilesMiniHerosComposition = "etoiles_mini_heros_global";
+    public const string CleLienAmeActif = "lien_ame_actif";
+    public const string ValeurVraie = "1";
+    public const string ValeurFausse = "0";
 
     private readonly Dictionary<int, HashSet<int>> _imposes = [];
     private readonly Dictionary<int, HashSet<int>> _bannis = [];
@@ -147,10 +161,14 @@ internal sealed class ReglagesEquipes
         AjouterCompte(resume, Lire(_factionsBannies, equipe).Count, "faction bannie", "factions bannies");
         if (EtoilesMiniHeros(equipe) > 0)
         {
-            resume.Add($"héros ≥ {EtoilesMiniHeros(equipe)} étoiles");
+            resume.Add(LibelleEtoilesHeros(EtoilesMiniHeros(equipe)));
         }
         return resume;
     }
+
+    public static string LibelleEtoilesEquipe(int etoiles) => $"équipe ≥ {etoiles} étoiles";
+
+    private static string LibelleEtoilesHeros(int etoiles) => $"héros ≥ {etoiles} étoiles";
 
     private static void AjouterCompte(List<string> resume, int nombre, string singulier, string pluriel)
     {
@@ -239,6 +257,85 @@ internal sealed class ReglagesEquipes
         }
         return reglages;
     }
+
+    /// <summary>Niveaux composition et équipe sous la forme clé/valeur ; toutes les clés sont présentes, même sans réglage.</summary>
+    public Dictionary<string, string> VersParametres(IReadOnlyList<int> etoilesMinimum) => new()
+    {
+        [CleEtoilesMinimum] = string.Join(SeparateurMinimums, etoilesMinimum),
+        [CleHerosImposes] = SerialiserImposes(),
+        [CleHerosBannis] = SerialiserBannis(),
+        [CleFactionsImposees] = SerialiserFactionsImposees(),
+        [CleFactionsBannies] = SerialiserFactionsBannies(),
+        [CleEtoilesMiniHeros] = SerialiserEtoilesMiniHeros(),
+        [CleEtoilesMiniHerosComposition] = EtoilesMiniHerosComposition.ToString(CultureInfo.InvariantCulture),
+        [CleLienAmeActif] = LienAmeActif ? ValeurVraie : ValeurFausse,
+    };
+
+    /// <summary>Inverse de <see cref="VersParametres"/> hors minimums d'équipe ; une clé absente donne la valeur par défaut.</summary>
+    public static ReglagesEquipes DepuisParametres(IReadOnlyDictionary<string, string> parametres) =>
+        Charger(parametres.GetValueOrDefault(CleHerosImposes), parametres.GetValueOrDefault(CleHerosBannis), parametres.GetValueOrDefault(CleEtoilesMiniHeros),
+            LireNombre(parametres.GetValueOrDefault(CleEtoilesMiniHerosComposition)), parametres.GetValueOrDefault(CleFactionsImposees),
+            parametres.GetValueOrDefault(CleFactionsBannies), parametres.GetValueOrDefault(CleLienAmeActif) != ValeurFausse);
+
+    /// <summary>Minimum d'étoiles de chaque équipe (rang = index), 0 pour une valeur illisible ; null quand la clé est absente.</summary>
+    public static List<int>? LireMinimums(IReadOnlyDictionary<string, string> parametres) =>
+        parametres.TryGetValue(CleEtoilesMinimum, out var texte)
+            ? [.. texte.Split(SeparateurMinimums).Select(t => Math.Min(LireNombre(t), FormOptionsGeneration.EtoilesMinimumMax))]
+            : null;
+
+    public const string AucunReglageEnregistre = "Aucun réglage enregistré";
+    private const string AucunReglageEquipe = "aucun réglage";
+    private const string SeparateurCriteres = " · ";
+    private const string SeparateurValeurs = ", ";
+
+    /// <summary>Lignes de consultation d'un instantané : le niveau composition puis une ligne par équipe. Un héros qui n'existe plus (nom null) n'est pas cité.</summary>
+    public static IReadOnlyList<string> Decrire(IReadOnlyDictionary<string, string> instantane, int nombreEquipes, Func<int, string?> nomHero)
+    {
+        if (instantane.Count == 0)
+        {
+            return [AucunReglageEnregistre];
+        }
+
+        var reglages = DepuisParametres(instantane);
+        var minimums = LireMinimums(instantane) ?? [];
+        var composition = $"Composition : lien d'âme {(reglages.LienAmeActif ? "actif" : "inactif")}";
+        if (reglages.EtoilesMiniHerosComposition > 0)
+        {
+            composition += SeparateurCriteres + LibelleEtoilesHeros(reglages.EtoilesMiniHerosComposition);
+        }
+        return [composition, .. Enumerable.Range(0, nombreEquipes)
+            .Select(i => $"Équipe {i + 1} : {reglages.DecrireEquipe(i, i < minimums.Count ? minimums[i] : 0, nomHero)}")];
+    }
+
+    private string DecrireEquipe(int equipe, int etoilesMinimum, Func<int, string?> nomHero)
+    {
+        var criteres = new List<string>();
+        if (etoilesMinimum > 0)
+        {
+            criteres.Add(LibelleEtoilesEquipe(etoilesMinimum));
+        }
+        if (EtoilesMiniHeros(equipe) > 0)
+        {
+            criteres.Add(LibelleEtoilesHeros(EtoilesMiniHeros(equipe)));
+        }
+        AjouterListe(criteres, "héros imposés", Imposes(equipe).Select(nomHero).OfType<string>());
+        AjouterListe(criteres, "héros bannis", Bannis(equipe).Select(nomHero).OfType<string>());
+        AjouterListe(criteres, "factions imposées", FactionsImposees(equipe));
+        AjouterListe(criteres, "factions bannies", FactionsBannies(equipe));
+        return criteres.Count > 0 ? string.Join(SeparateurCriteres, criteres) : AucunReglageEquipe;
+    }
+
+    private static void AjouterListe(List<string> criteres, string titre, IEnumerable<string> valeurs)
+    {
+        var triees = valeurs.Order(StringComparer.CurrentCultureIgnoreCase).ToList();
+        if (triees.Count > 0)
+        {
+            criteres.Add($"{titre} : {string.Join(SeparateurValeurs, triees)}");
+        }
+    }
+
+    private static int LireNombre(string? texte) =>
+        int.TryParse(texte, NumberStyles.None, CultureInfo.InvariantCulture, out var valeur) ? valeur : 0;
 
     // Un ensemble absent se lit comme vide, sans être créé.
     private static HashSet<T> Lire<T>(Dictionary<int, HashSet<T>> source, int equipe) =>

@@ -7,6 +7,8 @@ internal sealed class PanneauCompositions : UserControl
     private const string MessageNomPris = "Une composition porte déjà ce nom.";
     private const string MessageVide = "Aucune composition à afficher. Nouvelle composition… ou Générateur > Enregistrer la composition en crée une.";
     private const int LargeurCombo = 260;
+    // Environ cinq lignes : au-delà, la zone défile pour laisser la place aux cartes.
+    private const int HauteurReglages = 90;
 
     private readonly string _chemin;
     private readonly Func<Action, bool> _proteger;
@@ -20,6 +22,15 @@ internal sealed class PanneauCompositions : UserControl
     private readonly Button _renommer = new() { Text = "Renommer…", AutoSize = true };
     private readonly Button _dupliquer = new() { Text = "Dupliquer…", AutoSize = true };
     private readonly Button _supprimer = new() { Text = "Supprimer", AutoSize = true };
+    private readonly TextBox _reglages = new()
+    {
+        Dock = DockStyle.Top,
+        Height = HauteurReglages,
+        Multiline = true,
+        ReadOnly = true,
+        ScrollBars = ScrollBars.Vertical,
+        TabStop = false,
+    };
 
     private IReadOnlyDictionary<int, HeroStocke> _heros = new Dictionary<int, HeroStocke>();
     private List<List<int>> _equipes = [];
@@ -66,6 +77,7 @@ internal sealed class PanneauCompositions : UserControl
         contenu.Controls.Add(CartesEquipes.CreerCadreReserve(_zoneReserve));
 
         Controls.Add(contenu);
+        Controls.Add(_reglages);
         Controls.Add(barre);
     }
 
@@ -113,6 +125,7 @@ internal sealed class PanneauCompositions : UserControl
         _equipes = [];
         _reserve = [];
         _selection = null;
+        AfficherReglages(choisie);
         if (choisie is not null)
         {
             IReadOnlyList<Affectation> affectations = [];
@@ -122,6 +135,18 @@ internal sealed class PanneauCompositions : UserControl
             }
         }
         Afficher();
+    }
+
+    private void AfficherReglages(CompositionStockee? composition)
+    {
+        _reglages.Clear();
+        _reglages.Visible = composition is not null;
+        Dictionary<string, string> instantane = [];
+        if (composition is not null && _proteger(() => instantane = BaseSqlite.LireReglagesComposition(composition.Id, _chemin)))
+        {
+            _reglages.Lines = [.. ReglagesEquipes.Decrire(instantane, composition.NombreEquipes,
+                id => _heros.TryGetValue(id, out var stocke) ? stocke.Hero.Nom : null)];
+        }
     }
 
     // Un héros supprimé depuis l'enregistrement est ignoré : la composition s'affiche sans lui.
