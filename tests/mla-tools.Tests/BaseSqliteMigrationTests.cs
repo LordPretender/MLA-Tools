@@ -5,7 +5,7 @@ namespace MlaTools.Tests;
 
 public class BaseSqliteMigrationTests : IDisposable
 {
-    private const int VersionCourante = 6;
+    private const int VersionCourante = 7;
     private const int VersionAvantReglages = 5;
     private const string ClasseTank = "Tank";
     private const string RoleTank = "Tank";

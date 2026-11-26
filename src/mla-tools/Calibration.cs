@@ -29,7 +29,17 @@ internal static class Dispositions
     public const string ZoneFlecheSuivante = "FlecheSuivante";
 
     // La flèche « > » est au même endroit quelle que soit la disposition : elle se calibre une fois, hors des dispositions.
-    public static readonly string[] ZonesGlobales = [ZoneFlecheSuivante];
+    public const string ZoneOngletCompetence = "OngletCompetence";
+    public const string ZoneCompetence1 = "Competence1";
+    public const string ZoneCompetence2 = "Competence2";
+    public const string ZoneCompetence3 = "Competence3";
+    public const string ZoneCompetence4 = "Competence4";
+    // Bande du haut de la popup d'une compétence : type à gauche, pastilles de tags à droite.
+    public const string ZonePopupTags = "PopupTags";
+
+    public static readonly string[] ZonesCompetences = [ZoneCompetence1, ZoneCompetence2, ZoneCompetence3, ZoneCompetence4];
+
+    public static readonly string[] ZonesGlobales = [ZoneFlecheSuivante, ZoneOngletCompetence, .. ZonesCompetences, ZonePopupTags];
 }
 
 internal sealed class ConfigZones

@@ -39,12 +39,18 @@ internal static class Navigation
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nombre, Entree[] entrees, int taille);
 
-    // Clic réel (entrée souris simulée) au centre de la flèche calibrée : le jeu ignore les messages postés à sa fenêtre.
-    public static void CliquerFleche(IntPtr fenetre, ConfigZones config)
+    public static void CliquerFleche(IntPtr fenetre, ConfigZones config) =>
+        Cliquer(fenetre, config, Dispositions.ZoneFlecheSuivante, "La flèche suivante n'est pas calibrée.", "Impossible de placer le curseur sur la flèche.");
+
+    // Clic réel (entrée souris simulée) au centre d'une zone globale calibrée : le jeu ignore les messages postés à sa fenêtre.
+    public static void Cliquer(IntPtr fenetre, ConfigZones config, string nomZone) =>
+        Cliquer(fenetre, config, nomZone, $"La zone « {nomZone} » n'est pas calibrée.", $"Impossible de placer le curseur sur la zone « {nomZone} ».");
+
+    private static void Cliquer(IntPtr fenetre, ConfigZones config, string nomZone, string erreurNonCalibree, string erreurCurseur)
     {
-        if (!config.Globales.TryGetValue(Dispositions.ZoneFlecheSuivante, out var fleche))
+        if (!config.Globales.TryGetValue(nomZone, out var zone))
         {
-            throw new InvalidOperationException("La flèche suivante n'est pas calibrée.");
+            throw new InvalidOperationException(erreurNonCalibree);
         }
 
         config.VerifierTaille(FenetreCapture.TailleClient(fenetre), "La fenêtre");
@@ -54,10 +60,10 @@ internal static class Navigation
             FenetreCapture.AmenerAuPremierPlan(fenetre);
         }
 
-        var centre = FenetreCapture.ClientVersEcran(fenetre, new Point(fleche.X + fleche.Largeur / 2, fleche.Y + fleche.Hauteur / 2));
+        var centre = FenetreCapture.ClientVersEcran(fenetre, new Point(zone.X + zone.Largeur / 2, zone.Y + zone.Hauteur / 2));
         if (!SetCursorPos(centre.X, centre.Y))
         {
-            throw new InvalidOperationException("Impossible de placer le curseur sur la flèche.");
+            throw new InvalidOperationException(erreurCurseur);
         }
 
         var entrees = new[]

@@ -103,6 +103,30 @@ public class ConfigZonesTests : IDisposable
     }
 
     [Fact]
+    public void Enregistrer_PuisCharger_AccepteToutesLesZonesGlobales()
+    {
+        var config = UneConfig();
+        foreach (var nom in Dispositions.ZonesGlobales)
+        {
+            config.Globales[nom] = ZoneValide;
+        }
+
+        var chargee = EnregistrerPuisCharger(config);
+
+        Assert.Equal(Dispositions.ZonesGlobales.Length, chargee.Globales.Count);
+        Assert.All(Dispositions.ZonesGlobales, nom => Assert.Equal(ZoneValide, chargee.Globales[nom]));
+    }
+
+    [Fact]
+    public void ZonesGlobales_ContientLesZonesDeCompetencesSansDoublon()
+    {
+        Assert.Contains(Dispositions.ZoneOngletCompetence, Dispositions.ZonesGlobales);
+        Assert.Contains(Dispositions.ZonePopupTags, Dispositions.ZonesGlobales);
+        Assert.All(Dispositions.ZonesCompetences, nom => Assert.Contains(nom, Dispositions.ZonesGlobales));
+        Assert.Equal(Dispositions.ZonesGlobales.Length, Dispositions.ZonesGlobales.Distinct().Count());
+    }
+
+    [Fact]
     public void Charger_SansImportNiMarqueur_RetourneUnCalibrageVide()
     {
         AssertCalibrageVide(ConfigZones.Charger(_base.Chemin, CheminImportInexistant));

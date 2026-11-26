@@ -119,6 +119,13 @@ internal sealed record CompositionStockee(int Id, string Nom, int NombreEquipes)
 
 internal sealed record ZoneStockee(string Portee, string Nom, Zone Zone);
 
+/// <summary>Résultat brut de la lecture d'une compétence : aucune interprétation, les tags sont ceux lus dans la popup (libellés, avant normalisation). <paramref name="DateLecture"/> est null si la date stockée est illisible.</summary>
+internal sealed record CompetenceRecensee(int HeroId, int Numero, string Type, IReadOnlyList<string> Tags, DateTime? DateLecture);
+
+/// <param name="Tag">Forme normalisée, clé de filtre.</param>
+/// <param name="Libelle">Une des formes lues (la plus petite dans l'ordre alphabétique), pour l'affichage.</param>
+internal sealed record TagRecense(string Tag, string Libelle, int NombreHeros);
+
 internal static class BaseSqlite
 {
     public const string PorteeGlobales = "globales";
@@ -139,7 +146,7 @@ internal static class BaseSqlite
     private const string ColonneDateMaj = "date_maj";
     // Heure locale en texte : la colonne se lit et se trie sans conversion de fuseau.
     private const string FormatDateMaj = "yyyy-MM-dd HH:mm:ss";
-    private const int VersionSchema = 6;
+    private const int VersionSchema = 7;
     // Identifiant qu'aucune composition ne porte : « aucune composition à ignorer » dans la recherche d'un nom pris.
     private const int IdAucun = -1;
 
@@ -181,6 +188,21 @@ internal static class BaseSqlite
             cle TEXT NOT NULL,
             valeur TEXT NOT NULL,
             PRIMARY KEY (composition_id, cle));
+        CREATE TABLE IF NOT EXISTS competences_recensees (
+            hero_id INTEGER NOT NULL REFERENCES heros(id) ON DELETE CASCADE,
+            numero INTEGER NOT NULL CHECK (numero BETWEEN 1 AND 4),
+            type TEXT NOT NULL,
+            date_lecture TEXT NOT NULL,
+            PRIMARY KEY (hero_id, numero));
+        CREATE TABLE IF NOT EXISTS competences_tags (
+            hero_id INTEGER NOT NULL,
+            numero INTEGER NOT NULL,
+            tag TEXT NOT NULL,
+            libelle TEXT NOT NULL,
+            rang INTEGER NOT NULL,
+            PRIMARY KEY (hero_id, numero, tag),
+            FOREIGN KEY (hero_id, numero) REFERENCES competences_recensees(hero_id, numero) ON DELETE CASCADE);
+        CREATE INDEX IF NOT EXISTS ix_competences_tags_tag ON competences_tags(tag);
         CREATE TABLE IF NOT EXISTS parametres (
             cle TEXT PRIMARY KEY,
             valeur TEXT NOT NULL);
@@ -299,6 +321,92 @@ internal static class BaseSqlite
     {
         using var connexion = Ouvrir(chemin);
         Executer(connexion, null, "UPDATE heros SET lien_ame = $lien WHERE id = $id", ("$id", id), ("$lien", lienAme ? 1 : 0));
+    }
+
+    // Relire une compétence remplace l'ancien résultat, tags compris : le recensement reflète la dernière lecture.
+    public static void EnregistrerCompetence(int heroId, int numero, string type, IReadOnlyList<string> tags, string chemin)
+    {
+        using var connexion = Ouvrir(chemin);
+        using var transaction = connexion.BeginTransaction();
+        // Supprimer la ligne mère emporte ses tags (ON DELETE CASCADE).
+        Executer(connexion, transaction, "DELETE FROM competences_recensees WHERE hero_id = $hero AND numero = $numero", ("$hero", heroId), ("$numero", numero));
+        Executer(connexion, transaction, "INSERT INTO competences_recensees(hero_id, numero, type, date_lecture) VALUES($hero, $numero, $type, $date)",
+            ("$hero", heroId), ("$numero", numero), ("$type", type), ("$date", Horodatage()));
+        // Le tag stocké est la forme normalisée (clé de filtre, insensible à la casse et aux accents que l'OCR varie) ; la forme lue est gardée en libellé.
+        // Un tag sans lettre ni chiffre est du bruit d'OCR. La clé primaire (hero_id, numero, tag) refuse deux fois le même tag : le premier lu l'emporte.
+        var rang = 0;
+        var dejaVus = new HashSet<string>();
+        foreach (var lu in tags)
+        {
+            var tag = Referentiel.Normaliser(lu);
+            if (tag.Length == 0 || !dejaVus.Add(tag))
+            {
+                continue;
+            }
+            Executer(connexion, transaction, "INSERT INTO competences_tags(hero_id, numero, tag, libelle, rang) VALUES($hero, $numero, $tag, $libelle, $rang)",
+                ("$hero", heroId), ("$numero", numero), ("$tag", tag), ("$libelle", lu.Trim()), ("$rang", rang));
+            rang++;
+        }
+        transaction.Commit();
+    }
+
+    public static IReadOnlyList<CompetenceRecensee> LireCompetences(string chemin)
+    {
+        using var connexion = Ouvrir(chemin);
+        using var commande = Creer(connexion, null, """
+            SELECT c.hero_id, c.numero, c.type, c.date_lecture, t.libelle
+            FROM competences_recensees c LEFT JOIN competences_tags t ON t.hero_id = c.hero_id AND t.numero = c.numero
+            ORDER BY c.hero_id, c.numero, t.rang
+            """);
+        using var lecteur = commande.ExecuteReader();
+
+        var resultat = new List<CompetenceRecensee>();
+        var tags = new List<string>();
+        CompetenceRecensee? courante = null;
+        while (lecteur.Read())
+        {
+            var (heroId, numero) = (lecteur.GetInt32(0), lecteur.GetInt32(1));
+            if (courante is null || courante.HeroId != heroId || courante.Numero != numero)
+            {
+                tags = [];
+                courante = new CompetenceRecensee(heroId, numero, lecteur.GetString(2), tags, LireDateMaj(lecteur, 3));
+                resultat.Add(courante);
+            }
+            if (!lecteur.IsDBNull(4))
+            {
+                tags.Add(lecteur.GetString(4));
+            }
+        }
+        return resultat;
+    }
+
+    public static IReadOnlyList<TagRecense> ListerTagsDistincts(string chemin)
+    {
+        using var connexion = Ouvrir(chemin);
+        using var commande = Creer(connexion, null, "SELECT tag, MIN(libelle), COUNT(DISTINCT hero_id) FROM competences_tags GROUP BY tag ORDER BY tag");
+        using var lecteur = commande.ExecuteReader();
+
+        var resultat = new List<TagRecense>();
+        while (lecteur.Read())
+        {
+            resultat.Add(new TagRecense(lecteur.GetString(0), lecteur.GetString(1), lecteur.GetInt32(2)));
+        }
+        return resultat;
+    }
+
+    // Le tag demandé se normalise comme au stockage : « Contrôler » et « controler » désignent le même tag.
+    public static IReadOnlyList<int> HerosAyantTag(string tag, string chemin)
+    {
+        using var connexion = Ouvrir(chemin);
+        using var commande = Creer(connexion, null, "SELECT DISTINCT hero_id FROM competences_tags WHERE tag = $tag ORDER BY hero_id", ("$tag", Referentiel.Normaliser(tag)));
+        using var lecteur = commande.ExecuteReader();
+
+        var resultat = new List<int>();
+        while (lecteur.Read())
+        {
+            resultat.Add(lecteur.GetInt32(0));
+        }
+        return resultat;
     }
 
     public static Dictionary<string, string> LireRoles(string chemin) =>
