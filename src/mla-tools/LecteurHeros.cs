@@ -8,7 +8,8 @@ internal sealed record HeroLu(
     IReadOnlyList<string> Factions,
     string? Classe,
     string? Equipement,
-    IReadOnlyList<string> Alertes);
+    IReadOnlyList<string> Alertes,
+    IReadOnlyList<CompetenceLue>? Competences = null);
 
 internal static class LecteurHeros
 {

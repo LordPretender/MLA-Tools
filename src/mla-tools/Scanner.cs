@@ -16,11 +16,12 @@ internal static class Scanner
     public const int LimiteHeros = 600;
 
     // Lit le héros affiché puis clique sur la flèche suivante, jusqu'au nombre demandé ou à une autre condition d'arrêt.
-    public static async Task<ResultatScan> LireTousAsync(IntPtr fenetre, ConfigZones config, int nombre, int delaiApresClicMs, IProgress<int> progression, CancellationToken arret)
+    public static async Task<ResultatScan> LireTousAsync(IntPtr fenetre, ConfigZones config, int nombre, int delaiApresClicMs, bool lireCompetences, IProgress<int> progression, CancellationToken arret)
     {
         var heros = new List<HeroLu>();
         string? premier = null;
         string? precedent = null;
+        var ongletCompetenceOuvert = false;
 
         FenetreCapture.AmenerAuPremierPlan(fenetre);
         while (true)
@@ -33,6 +34,12 @@ internal static class Scanner
                 if (motif is not null)
                 {
                     return new ResultatScan(heros, motif.Value);
+                }
+
+                if (lireCompetences)
+                {
+                    hero = await AjouterCompetencesAsync(hero, fenetre, config, delaiApresClicMs, ongletCompetenceOuvert);
+                    ongletCompetenceOuvert = true;
                 }
 
                 heros.Add(hero);
@@ -53,6 +60,19 @@ internal static class Scanner
             Navigation.CliquerFleche(fenetre, config);
             await Task.Delay(delaiApresClicMs);
         }
+    }
+
+    // L'onglet reste actif quand la flèche change de héros : un seul clic, une fois la fiche du premier héros lue.
+    private static async Task<HeroLu> AjouterCompetencesAsync(HeroLu hero, IntPtr fenetre, ConfigZones config, int delaiApresClicMs, bool ongletOuvert)
+    {
+        if (!ongletOuvert)
+        {
+            Navigation.Cliquer(fenetre, config, Dispositions.ZoneOngletCompetence);
+            await Task.Delay(delaiApresClicMs);
+        }
+
+        var competences = await LecteurCompetences.LireAsync(fenetre, config, delaiApresClicMs);
+        return hero with { Competences = competences, Alertes = [.. hero.Alertes, .. competences.SelectMany(c => c.Alertes)] };
     }
 
     // Un nom illisible (clé vide) ne conclut rien : le héros est gardé, à revoir à la main.

@@ -112,6 +112,11 @@ internal sealed class FormHeros : FormBase
         {
             var resultat = BaseSqlite.Enregistrer(valides.Select(v => v.Hero), BaseSqlite.CheminParDefaut);
             message.Add($"{resultat.Ajoutes.Count} héros ajouté(s), {resultat.MisAJour.Count} mis à jour, {resultat.Inchanges.Count} inchangé(s).");
+            var nombreCompetences = EnregistrerCompetences(valides);
+            if (nombreCompetences > 0)
+            {
+                message.Add($"{nombreCompetences} compétence(s) recensée(s).");
+            }
             // Un héros qui vient d'être écrit ne doit pas rester marqué « Ajout » ou « Modification » dans les lignes encore affichées.
             ChargerHerosConnus();
             foreach (DataGridViewRow ligne in _grille.Rows)
@@ -134,6 +139,32 @@ internal sealed class FormHeros : FormBase
             MessageBox.Show(this, ex.Message, TitreApplication, MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return false;
         }
+    }
+
+    // Les compétences lues avec le héros se rangent sous son identifiant, qui n'existe qu'une fois le héros écrit : retrouvé par nom normalisé, comme à l'enregistrement.
+    private static int EnregistrerCompetences(List<(DataGridViewRow Ligne, Hero Hero)> valides)
+    {
+        var avecCompetences = valides
+            .Select(v => (v.Hero, Competences: v.Ligne.Tag as IReadOnlyList<CompetenceLue>))
+            .Where(v => v.Competences is { Count: > 0 })
+            .ToList();
+        if (avecCompetences.Count == 0)
+        {
+            return 0;
+        }
+
+        var ids = BaseSqlite.ListerHeros(BaseSqlite.CheminParDefaut).ToDictionary(h => Referentiel.Normaliser(h.Hero.Nom), h => h.Id);
+        var total = 0;
+        foreach (var (hero, competences) in avecCompetences)
+        {
+            var id = ids[Referentiel.Normaliser(hero.Nom)];
+            foreach (var competence in competences!)
+            {
+                BaseSqlite.EnregistrerCompetence(id, competence.Numero, competence.Type, competence.Tags, BaseSqlite.CheminParDefaut);
+                total++;
+            }
+        }
+        return total;
     }
 
     // Une cellule complétée à la main peut être vide ou fautive : la ligne est refusée plutôt qu'écrite en base.
@@ -235,6 +266,7 @@ internal sealed class FormHeros : FormBase
         ligne.Cells[ColNom].Value = hero.Nom;
         ligne.Cells[ColFactions].Value = string.Join(SeparateurFactions, hero.Factions);
         ligne.Cells[ColARevoir].Value = string.Join(SeparateurAlertes, hero.Alertes);
+        ligne.Tag = hero.Competences;
 
         // Une cellule de liste refuse toute valeur absente de sa source : une lecture ratée reste vide.
         if (hero.Etoiles is { } etoiles)

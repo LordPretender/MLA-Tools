@@ -16,6 +16,8 @@ internal static class Ocr
     // Le moteur ne lit pas un texte qui touche les bords de l'image (« Nana » remplit presque toute la hauteur de sa zone).
     private const int MargeContraste = 40;
 
+    private const int SeuilLuminositeTexteClair = 200;
+
     // Bleu mesuré sur Édith : chiffre 0 à 16, fond du jeu 40 à 60, corps de l'étoile environ 100. À ajuster sur d'autres héros.
     private const int SeuilBleuChiffre = 25;
     private const int MargeChiffre = 30;
@@ -41,6 +43,45 @@ internal static class Ocr
         return await ReconnaitreAsync(moteur, contraste);
     }
 
+    /// <summary>
+    /// Lit un texte clair posé sur des fonds de couleurs différentes (pastilles de tags) : seul le texte reste noir sur blanc,
+    /// quelle que soit la couleur de la pastille. Sans résultat, retombe sur la lecture ordinaire.
+    /// </summary>
+    public static async Task<string> LireTexteClairAsync(Bitmap capture, Zone zone)
+    {
+        var moteur = ObtenirMoteur();
+        using var agrandie = Agrandir(capture, zone);
+        using var seuillee = IsolerTexteClair(agrandie);
+        var texte = await ReconnaitreAsync(moteur, seuillee);
+        return texte.Length > 0 ? texte : await LireAsync(capture, zone);
+    }
+
+    private static float Gris(Color c) => 0.299f * c.R + 0.587f * c.G + 0.114f * c.B;
+
+    // Seuil initial sur le gris (0 à 255) : une pastille verte, orange ou rose est plus sombre que le texte blanc. À ajuster sur de vraies captures.
+    private static Bitmap IsolerTexteClair(Bitmap source)
+    {
+        var sortie = new Bitmap(source.Width + 2 * MargeContraste, source.Height + 2 * MargeContraste);
+        using (var g = Graphics.FromImage(sortie))
+        {
+            g.Clear(Color.White);
+        }
+
+        for (var y = 0; y < source.Height; y++)
+        {
+            for (var x = 0; x < source.Width; x++)
+            {
+                var c = source.GetPixel(x, y);
+                if (Gris(c) >= SeuilLuminositeTexteClair)
+                {
+                    sortie.SetPixel(MargeContraste + x, MargeContraste + y, Color.Black);
+                }
+            }
+        }
+
+        return sortie;
+    }
+
     // Le moteur ne lit rien d'un texte au contraste trop faible (« Arts Martiaux » rouge sombre sur fond nuit) :
     // on étire les niveaux de gris puis on met le fond en blanc, quelle que soit sa polarité d'origine.
     private static Bitmap Contraster(Bitmap source)
@@ -53,7 +94,7 @@ internal static class Ocr
             for (var x = 0; x < largeur; x++)
             {
                 var c = source.GetPixel(x, y);
-                gris[y * largeur + x] = 0.299f * c.R + 0.587f * c.G + 0.114f * c.B;
+                gris[y * largeur + x] = Gris(c);
             }
         }
 

@@ -26,6 +26,7 @@ internal sealed class FormPrincipale : FormBase
     private readonly Button _boutonTesterFleche = new() { Text = LibelleTesterFleche, AutoSize = true };
     private readonly Button _boutonLire = new() { Text = "Lire le héros affiché", AutoSize = true };
     private readonly Button _boutonLireTous = new() { Text = "Lire les héros", AutoSize = true };
+    private readonly CheckBox _lireCompetences = new() { Text = "Lire aussi les compétences (recensement des tags)", AutoSize = true };
     private readonly NumericUpDown _nombreHeros = new()
     {
         Minimum = 1,
@@ -90,7 +91,7 @@ internal sealed class FormPrincipale : FormBase
         var ligneDelai = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
         ligneDelai.Controls.Add(new Label { Text = "Délai après chaque clic (ms) :", AutoSize = true, Margin = new Padding(3, 8, 3, 0) });
         ligneDelai.Controls.Add(_delaiApresClic);
-        colonne.Controls.Add(OutilsDialogue.Groupe("Lecture", OutilsDialogue.Pile(_boutonLire, ligneLireTous, ligneDelai)));
+        colonne.Controls.Add(OutilsDialogue.Groupe("Lecture", OutilsDialogue.Pile(_boutonLire, ligneLireTous, _lireCompetences, ligneDelai)));
         return colonne;
     }
 
@@ -320,6 +321,11 @@ internal sealed class FormPrincipale : FormBase
             AfficherAvertissement("Calibrez d'abord au moins une disposition et la flèche suivante.");
             return;
         }
+        if (_lireCompetences.Checked && !Dispositions.ZonesGlobales.All(config.Globales.ContainsKey))
+        {
+            AfficherAvertissement($"Pour lire les compétences, calibrez d'abord les zones globales (bouton « {LibelleFleche} »).");
+            return;
+        }
         if (FenetreChoisie() is not { } fenetre)
         {
             return;
@@ -327,7 +333,7 @@ internal sealed class FormPrincipale : FormBase
 
         MemoriserReglagesLecture();
         _boutonLireTous.Enabled = false;
-        var (resultat, erreur) = await LancerScanAsync(fenetre, config, (int)_nombreHeros.Value, (int)_delaiApresClic.Value);
+        var (resultat, erreur) = await LancerScanAsync(fenetre, config, (int)_nombreHeros.Value, (int)_delaiApresClic.Value, _lireCompetences.Checked);
         _boutonLireTous.Enabled = true;
 
         if (erreur is not null)
@@ -342,7 +348,7 @@ internal sealed class FormPrincipale : FormBase
 
     // Cette fenêtre se réduit pour ne pas apparaître dans les captures ni recevoir les clics.
     // Hide() sur une fenêtre ouverte par ShowDialog la ferme, d'où l'ObjectDisposedException au Show() suivant.
-    private async Task<(ResultatScan? Resultat, string? Erreur)> LancerScanAsync(IntPtr fenetre, ConfigZones config, int nombre, int delaiApresClicMs)
+    private async Task<(ResultatScan? Resultat, string? Erreur)> LancerScanAsync(IntPtr fenetre, ConfigZones config, int nombre, int delaiApresClicMs, bool lireCompetences)
     {
         WindowState = FormWindowState.Minimized;
         using var arret = new CancellationTokenSource();
@@ -351,7 +357,7 @@ internal sealed class FormPrincipale : FormBase
         try
         {
             var progression = new Progress<int>(fenetreArret.MettreAJour);
-            return (await Scanner.LireTousAsync(fenetre, config, nombre, delaiApresClicMs, progression, arret.Token), null);
+            return (await Scanner.LireTousAsync(fenetre, config, nombre, delaiApresClicMs, lireCompetences, progression, arret.Token), null);
         }
         catch (Exception ex) when (EstErreurAttendue(ex))
         {
