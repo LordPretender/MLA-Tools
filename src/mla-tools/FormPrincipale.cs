@@ -9,7 +9,15 @@ internal sealed class FormPrincipale : FormBase
     private const string LibelleSimple = "Calibrer un héros normal";
     private const string LibelleHybride = "Calibrer un héros hybride";
     private const string LibelleFleche = "Calibrer la flèche suivante";
+    private const string LibelleCompetences = "Calibrer les compétences";
+    private const string LibellePopup = "Calibrer la popup d'une compétence";
     private const string LibelleTesterFleche = "Tester la flèche";
+    private const string PreparationCommune = "La fenêtre du jeu doit avoir sa taille d'origine.";
+    private const string PreparationSimple = "Dans le jeu, affichez la fiche « Info » d'un héros normal (une seule faction), onglet Héros, puis cliquez sur le bouton de cette fiche qui réduit la taille des héros.";
+    private const string PreparationHybride = "Dans le jeu, affichez la fiche « Info » d'un héros hybride (deux factions), onglet Héros, puis cliquez sur le bouton de cette fiche qui réduit la taille des héros.";
+    private const string PreparationFleche = "Dans le jeu, affichez la fiche « Info » d'un héros, avec la flèche « > » (héros suivant) bien visible.";
+    private const string PreparationCompetences = "Dans le jeu, affichez la fiche « Info » d'un héros, onglet Compétence actif, sans popup ouverte : l'onglet et les 4 icônes de compétence doivent être bien visibles.";
+    private const string PreparationPopup = "Dans le jeu, affichez la fiche « Info » d'un héros, onglet Compétence actif, puis ouvrez la popup d'une compétence qui affiche au moins 2 tags.";
     private const string MessageChoisirFenetre = "Choisissez d'abord la fenêtre du jeu.";
     private const string EtatFait = "fait";
     private const string EtatAFaire = "à faire";
@@ -23,7 +31,9 @@ internal sealed class FormPrincipale : FormBase
     private readonly Button _boutonSimple = new() { AutoSize = true };
     private readonly Button _boutonHybride = new() { AutoSize = true };
     private readonly Button _boutonFleche = new() { AutoSize = true };
-    private readonly Button _boutonTesterFleche = new() { Text = LibelleTesterFleche, AutoSize = true };
+    private readonly Button _boutonCompetences = new() { AutoSize = true };
+    private readonly Button _boutonPopup = new() { AutoSize = true };
+    private readonly Button _boutonTesterFleche =new() { Text = LibelleTesterFleche, AutoSize = true };
     private readonly Button _boutonLire = new() { Text = "Lire le héros affiché", AutoSize = true };
     private readonly Button _boutonLireTous = new() { Text = "Lire les héros", AutoSize = true };
     private readonly CheckBox _lireCompetences = new() { Text = "Lire aussi les compétences (recensement des tags)", AutoSize = true };
@@ -81,7 +91,7 @@ internal sealed class FormPrincipale : FormBase
         colonne.Controls.Add(OutilsDialogue.Groupe("Fenêtre du jeu", ligneFenetre));
 
         colonne.Controls.Add(OutilsDialogue.Groupe("Calibrage",
-            OutilsDialogue.Pile(_boutonSimple, _boutonHybride, _boutonFleche, _boutonTesterFleche)));
+            OutilsDialogue.Pile(_boutonSimple, _boutonHybride, _boutonFleche, _boutonTesterFleche, _boutonCompetences, _boutonPopup)));
 
         var ligneLireTous = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
         ligneLireTous.Controls.Add(_boutonLireTous);
@@ -98,10 +108,12 @@ internal sealed class FormPrincipale : FormBase
     private void AbonnerEvenements()
     {
         _boutonRafraichir.Click += (_, _) => RafraichirFenetres();
-        _boutonSimple.Click += (_, _) => Calibrer(Dispositions.Simple);
-        _boutonHybride.Click += (_, _) => Calibrer(Dispositions.Hybride);
-        _boutonFleche.Click += (_, _) => CalibrerFleche();
+        _boutonSimple.Click += (_, _) => Calibrer(Dispositions.Simple, PreparationSimple);
+        _boutonHybride.Click += (_, _) => Calibrer(Dispositions.Hybride, PreparationHybride);
+        _boutonFleche.Click += (_, _) => CalibrerLot(Dispositions.LotFleche, PreparationFleche);
         _boutonTesterFleche.Click += (_, _) => TesterFleche();
+        _boutonCompetences.Click += (_, _) => CalibrerLot(Dispositions.LotCompetences, PreparationCompetences);
+        _boutonPopup.Click += (_, _) => CalibrerLot(Dispositions.LotPopup, PreparationPopup);
         _boutonLire.Click += OnLireHeros;
         _boutonLireTous.Click += OnLireTous;
         Load += (_, _) =>
@@ -203,9 +215,13 @@ internal sealed class FormPrincipale : FormBase
         var config = LireConfig();
         _boutonSimple.Text = $"{LibelleSimple} ({Etat(config, Dispositions.Simple)})";
         _boutonHybride.Text = $"{LibelleHybride} ({Etat(config, Dispositions.Hybride)})";
-        var flecheFaite = config.Globales.ContainsKey(Dispositions.ZoneFlecheSuivante);
-        _boutonFleche.Text = $"{LibelleFleche} ({(flecheFaite ? EtatFait : EtatAFaire)})";
+        _boutonFleche.Text = $"{LibelleFleche} ({EtatLot(config, Dispositions.LotFleche)})";
+        _boutonCompetences.Text = $"{LibelleCompetences} ({EtatLot(config, Dispositions.LotCompetences)})";
+        _boutonPopup.Text = $"{LibellePopup} ({EtatLot(config, Dispositions.LotPopup)})";
     }
+
+    private static string EtatLot(ConfigZones config, string[] lot) =>
+        lot.All(config.Globales.ContainsKey) ? EtatFait : EtatAFaire;
 
     private static string Etat(ConfigZones config, string disposition) =>
         config.Dispositions.ContainsKey(disposition) ? EtatFait : EtatAFaire;
@@ -290,6 +306,16 @@ internal sealed class FormPrincipale : FormBase
             return;
         }
 
+        // Les compétences exigent des clics dans le jeu : le scan d'un seul héros (sans clic sur la flèche) les lit.
+        if (_lireCompetences.Checked)
+        {
+            if (ZonesCompetencesCalibrees(config) && FenetreChoisie() is { } fenetreJeu)
+            {
+                await ScannerEtAfficherAsync(_boutonLire, fenetreJeu, config, 1);
+            }
+            return;
+        }
+
         using var image = CapturerJeu(out _);
         if (image is null)
         {
@@ -321,20 +347,31 @@ internal sealed class FormPrincipale : FormBase
             AfficherAvertissement("Calibrez d'abord au moins une disposition et la flèche suivante.");
             return;
         }
-        if (_lireCompetences.Checked && !Dispositions.ZonesGlobales.All(config.Globales.ContainsKey))
-        {
-            AfficherAvertissement($"Pour lire les compétences, calibrez d'abord les zones globales (bouton « {LibelleFleche} »).");
-            return;
-        }
-        if (FenetreChoisie() is not { } fenetre)
+        if (!ZonesCompetencesCalibrees(config) || FenetreChoisie() is not { } fenetre)
         {
             return;
         }
 
+        await ScannerEtAfficherAsync(_boutonLireTous, fenetre, config, (int)_nombreHeros.Value);
+    }
+
+    private bool ZonesCompetencesCalibrees(ConfigZones config)
+    {
+        if (!_lireCompetences.Checked || Dispositions.ZonesGlobales.All(config.Globales.ContainsKey))
+        {
+            return true;
+        }
+
+        AfficherAvertissement($"Pour lire les compétences, calibrez d'abord les compétences et la popup (boutons « {LibelleCompetences} » et « {LibellePopup} »).");
+        return false;
+    }
+
+    private async Task ScannerEtAfficherAsync(Button bouton, IntPtr fenetre, ConfigZones config, int nombre)
+    {
         MemoriserReglagesLecture();
-        _boutonLireTous.Enabled = false;
-        var (resultat, erreur) = await LancerScanAsync(fenetre, config, (int)_nombreHeros.Value, (int)_delaiApresClic.Value, _lireCompetences.Checked);
-        _boutonLireTous.Enabled = true;
+        bouton.Enabled = false;
+        var (resultat, erreur) = await LancerScanAsync(fenetre, config, nombre, (int)_delaiApresClic.Value, _lireCompetences.Checked);
+        bouton.Enabled = true;
 
         if (erreur is not null)
         {
@@ -390,14 +427,25 @@ internal sealed class FormPrincipale : FormBase
         formulaire.ShowDialog(this);
     }
 
-    private void Calibrer(string disposition) =>
-        Calibrer((image, titre) => Calibration.Lancer(image, titre, disposition, this));
+    private void Calibrer(string disposition, string preparation) =>
+        Calibrer((image, titre) => Calibration.Lancer(image, titre, disposition, this), preparation);
 
-    private void CalibrerFleche() =>
-        Calibrer((image, titre) => Calibration.LancerGlobales(image, titre, this));
+    private void CalibrerLot(string[] lot, string preparation) =>
+        Calibrer((image, titre) => Calibration.LancerGlobales(image, titre, lot, this), preparation);
 
-    private void Calibrer(Func<Bitmap, string, bool> lancer)
+    private void Calibrer(Func<Bitmap, string, bool> lancer, string preparation)
     {
+        if (FenetreChoisie() is null)
+        {
+            return;
+        }
+
+        var reponse = MessageBox.Show(this, $"{preparation}\n{PreparationCommune}\n\nUne fois le jeu prêt, cliquez sur OK : l'écran sera capturé.", TitreApplication, MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
+        if (reponse != DialogResult.OK)
+        {
+            return;
+        }
+
         var image = CapturerJeu(out var titre);
         if (image is null)
         {

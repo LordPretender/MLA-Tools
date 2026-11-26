@@ -39,7 +39,32 @@ internal static class Dispositions
 
     public static readonly string[] ZonesCompetences = [ZoneCompetence1, ZoneCompetence2, ZoneCompetence3, ZoneCompetence4];
 
-    public static readonly string[] ZonesGlobales = [ZoneFlecheSuivante, ZoneOngletCompetence, .. ZonesCompetences, ZonePopupTags];
+    // Chaque lot se calibre sur un écran de jeu différent (popup fermée ou ouverte) : trois calibrages, un lot chacun.
+    public static readonly string[] LotFleche = [ZoneFlecheSuivante];
+    public static readonly string[] LotCompetences = [ZoneOngletCompetence, .. ZonesCompetences];
+    public static readonly string[] LotPopup = [ZonePopupTags];
+
+    public static readonly string[] ZonesGlobales = [.. LotFleche, .. LotCompetences, .. LotPopup];
+
+    // Texte affiché dans la fenêtre de calibrage pour la zone à tracer.
+    public static readonly Dictionary<string, string> Consignes = new()
+    {
+        [ZoneNom] = "Nom du héros.",
+        [ZoneEtoiles] = "Les étoiles du héros.",
+        [ZoneEveil] = "Le chiffre du niveau d'éveil.",
+        [ZoneFaction] = "L'icône de faction du héros.",
+        [ZoneFaction1] = "L'icône de la première faction.",
+        [ZoneFaction2] = "L'icône de la deuxième faction.",
+        [ZoneEquipement] = "L'équipement du héros.",
+        [ZoneClasse] = "La classe du héros.",
+        [ZoneFlecheSuivante] = "La flèche « > » qui passe au héros suivant.",
+        [ZoneOngletCompetence] = "L'onglet « Compétence » de la fiche du héros.",
+        [ZoneCompetence1] = "L'icône de la 1re compétence.",
+        [ZoneCompetence2] = "L'icône de la 2e compétence.",
+        [ZoneCompetence3] = "L'icône de la 3e compétence.",
+        [ZoneCompetence4] = "L'icône de la 4e compétence.",
+        [ZonePopupTags] = "La bande du haut de la popup : le type de la compétence à gauche, les pastilles de tags à droite.",
+    };
 }
 
 internal sealed class ConfigZones
@@ -159,8 +184,9 @@ internal static class Calibration
             config => config.Dispositions.GetValueOrDefault(disposition),
             (config, zones) => config.Dispositions[disposition] = zones);
 
-    public static bool LancerGlobales(Bitmap image, string titreFenetre, IWin32Window parent) =>
-        Executer(image, titreFenetre, parent, Dispositions.ZonesGlobales,
+    // Seules les zones du lot sont exigées pour enregistrer ; les autres zones globales déjà tracées sont conservées.
+    public static bool LancerGlobales(Bitmap image, string titreFenetre, string[] lot, IWin32Window parent) =>
+        Executer(image, titreFenetre, parent, lot,
             config => config.Globales,
             (config, zones) => config.Globales = zones);
 
@@ -214,6 +240,7 @@ internal sealed class FormCalibration : FormBase
     private readonly string[] _nomsZones;
     private readonly Surface _surface;
     private readonly ComboBox _selecteur = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
+    private readonly Label _consigne = new() { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(6, 2, 6, 6) };
     private readonly Button _boutonEnregistrer = new() { Text = "Enregistrer", AutoSize = true, DialogResult = DialogResult.OK };
     private readonly Button _boutonAnnuler = new() { Text = "Annuler", AutoSize = true, DialogResult = DialogResult.Cancel };
 
@@ -243,7 +270,12 @@ internal sealed class FormCalibration : FormBase
         barre.Controls.Add(_boutonEnregistrer);
         barre.Controls.Add(_boutonAnnuler);
 
+        // Un libellé automatique ne passe pas à la ligne seul : sa largeur maximale suit celle de la fenêtre.
+        Resize += (_, _) => _consigne.MaximumSize = new Size(ClientSize.Width, 0);
+        _consigne.MaximumSize = new Size(ClientSize.Width, 0);
+
         Controls.Add(_surface);
+        Controls.Add(_consigne);
         Controls.Add(barre);
         SelectionnerZone();
     }
@@ -264,6 +296,7 @@ internal sealed class FormCalibration : FormBase
     private void SelectionnerZone()
     {
         _surface.ZoneCourante = (string?)_selecteur.SelectedItem;
+        _consigne.Text = Dispositions.Consignes.GetValueOrDefault(_surface.ZoneCourante ?? "", "");
         _boutonEnregistrer.Enabled = _nomsZones.All(Zones.ContainsKey);
         _surface.Invalidate();
     }

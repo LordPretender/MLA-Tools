@@ -118,6 +118,23 @@ public class ConfigZonesTests : IDisposable
     }
 
     [Fact]
+    public void ChaqueZoneACalibrerPorteUneConsigne()
+    {
+        var toutes = Dispositions.ZonesParDisposition.Values.SelectMany(z => z).Concat(Dispositions.ZonesGlobales).Distinct();
+
+        Assert.All(toutes, nom => Assert.False(string.IsNullOrWhiteSpace(Dispositions.Consignes.GetValueOrDefault(nom))));
+    }
+
+    [Fact]
+    public void LesLotsDeCalibrageRecouvrentExactementLesZonesGlobales()
+    {
+        var lots = Dispositions.LotFleche.Concat(Dispositions.LotCompetences).Concat(Dispositions.LotPopup).ToList();
+
+        Assert.Equal(lots.Count, lots.Distinct().Count());
+        Assert.Equal(Dispositions.ZonesGlobales.Order(), lots.Order());
+    }
+
+    [Fact]
     public void ZonesGlobales_ContientLesZonesDeCompetencesSansDoublon()
     {
         Assert.Contains(Dispositions.ZoneOngletCompetence, Dispositions.ZonesGlobales);
