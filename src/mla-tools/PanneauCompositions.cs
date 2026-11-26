@@ -22,6 +22,9 @@ internal sealed class PanneauCompositions : UserControl
     private readonly Button _renommer = new() { Text = "Renommer…", AutoSize = true };
     private readonly Button _dupliquer = new() { Text = "Dupliquer…", AutoSize = true };
     private readonly Button _supprimer = new() { Text = "Supprimer", AutoSize = true };
+    private readonly Button _restaurer = new() { Text = "Restaurer ces réglages…", AutoSize = true };
+    private readonly Action<int, IReadOnlyDictionary<string, string>, IReadOnlyList<string>> _surRestauration;
+    private IReadOnlyDictionary<string, string> _instantane = new Dictionary<string, string>();
     private readonly TextBox _reglages = new()
     {
         Dock = DockStyle.Top,
@@ -41,10 +44,13 @@ internal sealed class PanneauCompositions : UserControl
     private bool _enMiseAJour;
 
     /// <param name="proteger">Exécute un accès à la base en signalant l'erreur à l'utilisateur ; retourne false en cas d'échec.</param>
-    public PanneauCompositions(string chemin, Font police, Font gras, Func<Action, bool> proteger)
+    /// <param name="surRestauration">Reçoit le nombre d'équipes, l'instantané des réglages et sa description.</param>
+    public PanneauCompositions(string chemin, Font police, Font gras, Func<Action, bool> proteger,
+        Action<int, IReadOnlyDictionary<string, string>, IReadOnlyList<string>> surRestauration)
     {
         _chemin = chemin;
         _proteger = proteger;
+        _surRestauration = surRestauration;
         _cartes = new CartesEquipes(police, gras) { MenuEquipe = _menuEquipe, SurClic = Cliquer, SurAjout = Ajouter };
         Dock = DockStyle.Fill;
 
@@ -60,6 +66,7 @@ internal sealed class PanneauCompositions : UserControl
         _renommer.Click += (_, _) => Renommer();
         _dupliquer.Click += (_, _) => Dupliquer();
         _supprimer.Click += (_, _) => Supprimer();
+        _restaurer.Click += (_, _) => Restaurer();
         _zoneCartes.Resize += (_, _) =>
         {
             if (CartesEquipes.Colonnes(_zoneCartes) != _colonnes)
@@ -70,7 +77,7 @@ internal sealed class PanneauCompositions : UserControl
 
         _liste.Margin = new Padding(3, 4, 12, 3);
         var barre = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(8) };
-        barre.Controls.AddRange([_liste, _nouvelle, _renommer, _dupliquer, _supprimer]);
+        barre.Controls.AddRange([_liste, _nouvelle, _renommer, _dupliquer, _supprimer, _restaurer]);
 
         var contenu = new Panel { Dock = DockStyle.Fill };
         contenu.Controls.Add(_zoneCartes);
@@ -146,6 +153,17 @@ internal sealed class PanneauCompositions : UserControl
         {
             _reglages.Lines = [.. ReglagesEquipes.Decrire(instantane, composition.NombreEquipes,
                 id => _heros.TryGetValue(id, out var stocke) ? stocke.Hero.Nom : null)];
+        }
+        _instantane = instantane;
+        // Une composition d'avant l'embarquement des réglages n'a rien à restaurer.
+        _restaurer.Enabled = instantane.Count > 0;
+    }
+
+    private void Restaurer()
+    {
+        if (Choisie is { } composition)
+        {
+            _surRestauration(composition.NombreEquipes, _instantane, _reglages.Lines);
         }
     }
 

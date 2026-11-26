@@ -202,19 +202,10 @@ internal sealed class FormEquipes : FormBase
 
         var onglets = new TabControl { Dock = DockStyle.Fill };
         onglets.TabPages.Add(ConstruireOngletHeros());
-        onglets.TabPages.Add(ConstruireOngletEquipes());
-        _panneauCompositions = new PanneauCompositions(_chemin, _police, _gras, Proteger);
-        var pageCompositions = NouvellePage("Équipes");
-        pageCompositions.Controls.Add(_panneauCompositions);
-        onglets.TabPages.Add(pageCompositions);
-        // Une composition a pu être enregistrée depuis le Générateur depuis la dernière ouverture de l'onglet.
-        onglets.SelectedIndexChanged += (_, _) =>
-        {
-            if (onglets.SelectedTab == pageCompositions)
-            {
-                _panneauCompositions.Recharger(_moteur, _parId, (int)_nombreEquipes.Value);
-            }
-        };
+        var pageGenerateur = ConstruireOngletEquipes();
+        onglets.TabPages.Add(pageGenerateur);
+        _panneauCompositions = CreerPanneauCompositions(onglets, pageGenerateur);
+        AjouterOngletCompositions(onglets);
         var menu = ConstruireMenu();
         Controls.Add(onglets);
         Controls.Add(ConstruireBarreEtat());
@@ -253,6 +244,30 @@ internal sealed class FormEquipes : FormBase
 
     private static TabPage NouvellePage(string titre) =>
         new(titre) { UseVisualStyleBackColor = false, BackColor = OutilsDialogue.FondFenetre };
+
+    private PanneauCompositions CreerPanneauCompositions(TabControl onglets, TabPage pageGenerateur) =>
+        new(_chemin, _police, _gras, Proteger, (nombreEquipes, instantane, description) =>
+        {
+            if (RestaurerReglages(nombreEquipes, instantane, description))
+            {
+                onglets.SelectedTab = pageGenerateur;
+            }
+        });
+
+    private void AjouterOngletCompositions(TabControl onglets)
+    {
+        var page = NouvellePage("Équipes");
+        page.Controls.Add(_panneauCompositions);
+        onglets.TabPages.Add(page);
+        // Une composition a pu être enregistrée depuis le Générateur depuis la dernière ouverture de l'onglet.
+        onglets.SelectedIndexChanged += (_, _) =>
+        {
+            if (onglets.SelectedTab == page)
+            {
+                _panneauCompositions.Recharger(_moteur, _parId, (int)_nombreEquipes.Value);
+            }
+        };
+    }
 
     private MenuStrip ConstruireMenu()
     {
@@ -820,11 +835,15 @@ internal sealed class FormEquipes : FormBase
 
     private void ReinitialiserComposition()
     {
-        if (MessageBox.Show(this, "Vider les équipes, la réserve et les réglages de la composition ?", TitreApplication, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+        if (MessageBox.Show(this, "Vider les équipes, la réserve et les réglages de la composition ?", TitreApplication, MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
         {
-            return;
+            ViderComposition();
         }
+    }
 
+    // Sans confirmation : chaque appelant pose la sienne. Retourne false quand rien n'a pu être écrit.
+    private bool ViderComposition()
+    {
         var anciennesVariantes = _variantes;
         var anciensReglages = _reglages.Copier();
         var anciensMinimums = _etoilesMinimum.ToList();
@@ -837,7 +856,7 @@ internal sealed class FormEquipes : FormBase
             _variantes = anciennesVariantes;
             _reglages = anciensReglages;
             _etoilesMinimum = anciensMinimums;
-            return;
+            return false;
         }
 
         SynchroniserMoteur(lienAmeAvant);
@@ -848,6 +867,60 @@ internal sealed class FormEquipes : FormBase
         _barreVariantes.Visible = false;
         AfficherVerrouGeneration();
         AfficherCartes();
+        return true;
+    }
+
+    // Repart d'une composition vierge, puis y pose le nombre d'équipes et les réglages embarqués ; le mode et les options globales ne sont pas embarqués.
+    private bool RestaurerReglages(int nombreEquipes, IReadOnlyDictionary<string, string> instantane, IReadOnlyList<string> description)
+    {
+        var nombre = (int)Math.Clamp(nombreEquipes, _nombreEquipes.Minimum, _nombreEquipes.Maximum);
+        var minimums = ReglagesEquipes.LireMinimums(instantane) ?? [];
+        if (!ConfirmerRestauration(nombre, minimums, description) || !ViderComposition())
+        {
+            return false;
+        }
+
+        var reglagesVides = _reglages;
+        var minimumsVides = _etoilesMinimum;
+        var ancienNombre = _nombreEquipesPersiste;
+        _reglages = ReglagesEquipes.DepuisParametres(instantane);
+        _etoilesMinimum = minimums;
+        _nombreEquipesPersiste = nombre;
+        if (!Proteger(SauvegarderParametres))
+        {
+            _reglages = reglagesVides;
+            _etoilesMinimum = minimumsVides;
+            _nombreEquipesPersiste = ancienNombre;
+            return false;
+        }
+
+        SynchroniserMoteur(reglagesVides.LienAmeActif);
+        // Sans ce drapeau, changer le nombre d'équipes effacerait les réglages qui viennent d'être restaurés.
+        _parametresEnChargement = true;
+        _nombreEquipes.Value = nombre;
+        _parametresEnChargement = false;
+        AfficherChoixMode();
+        AfficherCartes();
+        return true;
+    }
+
+    private bool ConfirmerRestauration(int nombreEquipes, IReadOnlyList<int> minimums, IReadOnlyList<string> description)
+    {
+        List<string> lignes =
+        [
+            "Les équipes, la réserve, les variantes et les réglages actuels du Générateur seront effacés.",
+            string.Empty,
+            $"Réglages à restaurer ({nombreEquipes} équipe(s)) :",
+            .. description,
+        ];
+        if (MoteurEquipes.ModeEffectif(_mode, nombreEquipes) == ModeGeneration.SommeMaximale && minimums.Any(minimum => minimum > 0))
+        {
+            lignes.Add(string.Empty);
+            lignes.Add($"En mode « {FormOptionsGeneration.LibellesModes[(int)ModeGeneration.SommeMaximale]} », les minimums d'étoiles par équipe restent sans effet.");
+        }
+
+        return MessageBox.Show(this, string.Join(Environment.NewLine, lignes), TitreApplication,
+            MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
     }
 
     // Le lien d'âme est lu à la construction du moteur : un changement de valeur impose de le reconstruire pour qu'il joue.
