@@ -88,7 +88,6 @@ internal sealed class FormEquipes : FormBase
     private readonly Label _libelleMode = new() { Text = "Mode", AutoSize = true, Margin = new Padding(16, 6, 6, 0) };
     private readonly ComboBox _choixMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 230 };
 
-    private readonly ToolStripMenuItem _menuComposition = new("Réglages de la composition…");
     // Le raccourci s'affiche seulement : un ContextMenuStrip hors d'un contrôle ne traite pas ShortcutKeys, ProcessCmdKey s'en charge.
     private readonly ToolStripMenuItem _menuReinitialiser = new("Réinitialiser la composition…") { ShortcutKeyDisplayString = "Ctrl+R" };
 
@@ -396,13 +395,7 @@ internal sealed class FormEquipes : FormBase
         var page = NouvellePage("Générateur");
         var generer = new Button { Text = "Générer", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
         generer.Click += (_, _) => GenererEquipes();
-        var enregistrer = new ToolStripMenuItem("Enregistrer la composition");
-        enregistrer.Click += (_, _) => EnregistrerComposition();
-        _menuComposition.Click += (_, _) => ReglerComposition();
-        _menuReinitialiser.Click += (_, _) => ReinitialiserComposition();
-        _menuBoutonComposition.Items.AddRange([_menuComposition, enregistrer, new ToolStripSeparator(), _menuReinitialiser]);
-        var composition = new Button { Text = "Composition ▾", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
-        composition.Click += (_, _) => _menuBoutonComposition.Show(composition, new Point(0, composition.Height));
+        var composition = ConstruireBoutonComposition();
         _nombreEquipes.ValueChanged += (_, _) =>
         {
             if (!_parametresEnChargement)
@@ -444,6 +437,19 @@ internal sealed class FormEquipes : FormBase
         page.Controls.Add(_barreVariantes);
         page.Controls.Add(barre);
         return page;
+    }
+
+    private Button ConstruireBoutonComposition()
+    {
+        var reglages = new ToolStripMenuItem("Réglages de la composition…");
+        reglages.Click += (_, _) => ReglerComposition();
+        var enregistrer = new ToolStripMenuItem("Enregistrer la composition");
+        enregistrer.Click += (_, _) => EnregistrerComposition();
+        _menuReinitialiser.Click += (_, _) => ReinitialiserComposition();
+        _menuBoutonComposition.Items.AddRange([reglages, enregistrer, new ToolStripSeparator(), _menuReinitialiser]);
+        var bouton = new Button { Text = "Composition ▾", AutoSize = true, Margin = new Padding(8, 3, 3, 3) };
+        bouton.Click += (_, _) => _menuBoutonComposition.Show(bouton, new Point(0, bouton.Height));
+        return bouton;
     }
 
     private void AjouterColonnesHeros()
@@ -810,7 +816,6 @@ internal sealed class FormEquipes : FormBase
         _nombreEquipes.Enabled = modifiable;
         _libelleMode.Enabled = modifiable;
         _choixMode.Enabled = modifiable;
-        _menuComposition.Enabled = modifiable;
     }
 
     private void ReinitialiserComposition()
