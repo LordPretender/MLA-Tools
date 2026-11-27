@@ -66,7 +66,7 @@ internal static class Ocr
         return texte.Length > 0 ? texte : await LireAsync(capture, zone);
     }
 
-    private static float Gris(Color c) => 0.299f * c.R + 0.587f * c.G + 0.114f * c.B;
+    internal static float Gris(Color c) => 0.299f * c.R + 0.587f * c.G + 0.114f * c.B;
 
     // Un texte gris clair sur fond sombre (type de compétence) passe sous le seuil fixe : le seuil se déduit de la zone, borné pour ne pas prendre du bruit de fond pour du texte.
     private static int SeuilAdaptatif(Bitmap source)
