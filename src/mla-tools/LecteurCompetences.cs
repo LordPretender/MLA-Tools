@@ -1,5 +1,6 @@
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 using static MlaTools.Dispositions;
 
 namespace MlaTools;
@@ -28,6 +29,9 @@ internal static class LecteurCompetences
     private const int SeuilContraste = 20;
     private const double FractionTrait = 0.8;
     private const int OctetsParPixel = 4;
+    // L'OCR prend le « o » isolé pour un zéro (« A0E ») : entre deux lettres, un zéro ne peut être qu'un « o ».
+    private const string ZeroEntreLettres = @"(?<=\p{L})0(?=\p{L})";
+    private const string LettreO = "o";
 
     // Ouvre chaque popup de compétence, la lit puis la ferme : l'onglet Compétence doit déjà être affiché.
     public static async Task<IReadOnlyList<CompetenceLue>> LireAsync(IntPtr fenetre, ConfigZones config, int delaiApresClicMs)
@@ -64,10 +68,10 @@ internal static class LecteurCompetences
         var etiquette = $"{PrefixeEtiquette}{numero}";
         Ocr.DiagnostiquerCapture(capture, zone, etiquette);
         var largeurType = (int)(zone.Largeur * FractionType);
-        // Seul le type est lu au seuil adaptatif : à droite, abaisser le seuil remplirait les pastilles claires (orange) et fondrait le texte dedans.
-        var texteType = await Ocr.LireTexteClairAsync(capture, zone with { Largeur = largeurType }, seuilAdaptatif: true, etiquette: etiquette + SuffixeType);
-        var texteTags = await Ocr.LireTexteClairAsync(capture, zone with { X = zone.X + largeurType, Largeur = zone.Largeur - largeurType }, etiquette: etiquette + SuffixeTags);
-        return Construire(numero, texteType, texteTags);
+        // Deux lectures distinctes : le type est gris clair sur fond sombre, les tags sont blancs sur des pastilles de couleur.
+        var texteType = await Ocr.LireTexteClairAsync(capture, zone with { Largeur = largeurType }, etiquette + SuffixeType);
+        var pastilles = await Ocr.LirePastillesAsync(capture, zone with { X = zone.X + largeurType, Largeur = zone.Largeur - largeurType }, etiquette + SuffixeTags);
+        return Construire(numero, texteType, pastilles);
     }
 
     // Écart vertical entre le trait séparateur trouvé et celui attendu d'après la zone calibrée ; 0 si aucun trait n'est reconnu.
@@ -145,10 +149,10 @@ internal static class LecteurCompetences
     }
 
     // Un type ou un tag illisible n'arrête rien : la compétence est gardée telle quelle, avec une alerte pour la revoir.
-    internal static CompetenceLue Construire(int numero, string texteType, string texteTags)
+    internal static CompetenceLue Construire(int numero, string texteType, IEnumerable<string> pastilles)
     {
         var type = Referentiel.Compacter(texteType);
-        var tags = DecouperTags(texteTags);
+        var tags = RetenirTags(pastilles);
         var alertes = new List<string>();
         if (type.Length == 0)
         {
@@ -161,17 +165,18 @@ internal static class LecteurCompetences
         return new CompetenceLue(numero, type, tags, alertes);
     }
 
-    // Un mot = un tag : le texte lu à droite du type enchaîne les pastilles. Un mot sans lettre ni chiffre est du bruit d'OCR, un doublon est ignoré.
-    internal static List<string> DecouperTags(string texte)
+    // Une pastille = un tag. Un texte sans lettre ni chiffre est du bruit d'OCR, un doublon est ignoré.
+    internal static List<string> RetenirTags(IEnumerable<string> pastilles)
     {
         var tags = new List<string>();
         var dejaVus = new HashSet<string>();
-        foreach (var mot in Referentiel.Compacter(texte).Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        foreach (var pastille in pastilles)
         {
-            var norme = Referentiel.Normaliser(mot);
+            var tag = Regex.Replace(Referentiel.Compacter(pastille), ZeroEntreLettres, LettreO);
+            var norme = Referentiel.Normaliser(tag);
             if (norme.Length > 0 && dejaVus.Add(norme))
             {
-                tags.Add(mot);
+                tags.Add(tag);
             }
         }
         return tags;

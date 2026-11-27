@@ -57,40 +57,64 @@ public class LecteurCompetencesTests
         Assert.Equal(0, LecteurCompetences.DecalageVertical(image, ZonePopup));
     }
 
+    private const double HauteurMot = 60;
+
+    private static MotLu Mot(string texte, double gauche, double largeur) => new(texte, gauche, largeur, HauteurMot);
+
     [Fact]
-    public void DecouperTags_PlusieursMots_UnTagParMot()
+    public void RegrouperMots_MotCoupeParLOcr_UneSeulePastille()
     {
-        Assert.Equal(["Contrôler", "AoE"], LecteurCompetences.DecouperTags("Contrôler AoE"));
+        Assert.Equal(["Contrôler", "AO E"], Ocr.RegrouperMots([Mot("Contrôler", 0, 320), Mot("AO", 490, 100), Mot("E", 608, 40)]));
     }
 
     [Fact]
-    public void DecouperTags_EspacesEtRetoursALaLigne_SontCompactes()
+    public void RegrouperMots_PastillesEspacees_RestentDistinctesDeGaucheADroite()
     {
-        Assert.Equal(["Soigner", "AoE"], LecteurCompetences.DecouperTags("  Soigner \r\n  AoE "));
+        Assert.Equal(["Contrôler", "Dégâts"], Ocr.RegrouperMots([Mot("Dégâts", 430, 280), Mot("Contrôler", 0, 320)]));
     }
 
     [Fact]
-    public void DecouperTags_MotSansLettreNiChiffre_EstIgnore()
+    public void RegrouperMots_AucunMot_ListeVide()
     {
-        Assert.Equal(["Soigner"], LecteurCompetences.DecouperTags("Soigner | ."));
+        Assert.Empty(Ocr.RegrouperMots([]));
     }
 
     [Fact]
-    public void DecouperTags_DoublonALaCasseEtAuxAccentsPres_GardeLePremier()
+    public void RetenirTags_PastilleDePlusieursMots_UnSeulTag()
     {
-        Assert.Equal(["Contrôler"], LecteurCompetences.DecouperTags("Contrôler controler CONTROLER"));
+        Assert.Equal(["Contrôle total", "AoE"], LecteurCompetences.RetenirTags(["  Contrôle \r\n  total ", "AoE"]));
     }
 
     [Fact]
-    public void DecouperTags_TexteVide_RendUneListeVide()
+    public void RetenirTags_TexteSansLettreNiChiffre_EstIgnore()
     {
-        Assert.Empty(LecteurCompetences.DecouperTags(""));
+        Assert.Equal(["Soigner"], LecteurCompetences.RetenirTags(["Soigner", "|", "."]));
+    }
+
+    [Fact]
+    public void RetenirTags_DoublonALaCasseEtAuxAccentsPres_GardeLePremier()
+    {
+        Assert.Equal(["Contrôler"], LecteurCompetences.RetenirTags(["Contrôler", "controler", "CONTROLER"]));
+    }
+
+    [Theory]
+    [InlineData("A0E", "AoE")]
+    [InlineData("Niveau 10", "Niveau 10")]
+    public void RetenirTags_ZeroEntreDeuxLettres_DevientUnO(string lu, string attendu)
+    {
+        Assert.Equal([attendu], LecteurCompetences.RetenirTags([lu]));
+    }
+
+    [Fact]
+    public void RetenirTags_AucunePastille_ListeVide()
+    {
+        Assert.Empty(LecteurCompetences.RetenirTags([]));
     }
 
     [Fact]
     public void Construire_TypeEtTagsLus_SansAlerte()
     {
-        var competence = LecteurCompetences.Construire(NumeroCompetence, "Ulti", "Contrôler AoE");
+        var competence = LecteurCompetences.Construire(NumeroCompetence, "Ulti", ["Contrôler", "AoE"]);
 
         Assert.Equal(NumeroCompetence, competence.Numero);
         Assert.Equal("Ulti", competence.Type);
@@ -101,7 +125,7 @@ public class LecteurCompetencesTests
     [Fact]
     public void Construire_TypeIllisible_GardeLesTagsEtAlerte()
     {
-        var competence = LecteurCompetences.Construire(NumeroCompetence, "  ", "Soigner");
+        var competence = LecteurCompetences.Construire(NumeroCompetence, "  ", ["Soigner"]);
 
         Assert.Equal("", competence.Type);
         Assert.Equal(["Soigner"], competence.Tags);
@@ -111,7 +135,7 @@ public class LecteurCompetencesTests
     [Fact]
     public void Construire_AucunTag_GardeLeTypeEtAlerte()
     {
-        var competence = LecteurCompetences.Construire(NumeroCompetence, "Compétence", "");
+        var competence = LecteurCompetences.Construire(NumeroCompetence, "Compétence", []);
 
         Assert.Equal("Compétence", competence.Type);
         Assert.Empty(competence.Tags);
@@ -121,7 +145,7 @@ public class LecteurCompetencesTests
     [Fact]
     public void Construire_RienDeLisible_DeuxAlertes()
     {
-        var competence = LecteurCompetences.Construire(NumeroCompetence, "", "");
+        var competence = LecteurCompetences.Construire(NumeroCompetence, "", []);
 
         Assert.Equal(2, competence.Alertes.Count);
     }

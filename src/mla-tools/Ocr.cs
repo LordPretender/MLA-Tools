@@ -6,6 +6,9 @@ using Windows.Media.Ocr;
 
 namespace MlaTools;
 
+/// <summary>Mot reconnu par l'OCR, avec sa position dans l'image soumise.</summary>
+internal readonly record struct MotLu(string Texte, double Gauche, double Largeur, double Hauteur);
+
 internal static class Ocr
 {
     private const string CodeLangue = "fr";
@@ -18,6 +21,10 @@ internal static class Ocr
 
     private const int SeuilLuminositeTexteClair = 200;
     private const int SeuilLuminositeMinimal = 120;
+    // Texte blanc d'une pastille : les trois canaux sont hauts, alors qu'un reflet sur une pastille colorée garde au moins un canal bas tout en étant très lumineux.
+    private const int SeuilCanalTexteBlanc = 180;
+    // Écart horizontal, en hauteurs de texte, sous lequel deux mots appartiennent à la même pastille (l'OCR coupe parfois « AoE ») ; deux pastilles sont bien plus espacées.
+    private const double EcartMaxMotsParHauteur = 0.8;
     private const int NiveauxGris = 256;
     private const int EpaisseurCadreDiagnostic = 3;
     private const string VariableDiagnostic = "MLA_OCR_DIAGNOSTIC";
@@ -41,29 +48,73 @@ internal static class Ocr
     {
         var moteur = ObtenirMoteur();
         using var agrandie = Agrandir(capture, zone);
-        var texte = await ReconnaitreAsync(moteur, agrandie);
-        if (texte.Length > 0)
+        return await LireAvecContrasteAsync(agrandie, image => ReconnaitreAsync(moteur, image), texte => texte.Length == 0);
+    }
+
+    // Lecture de l'image telle quelle puis, si rien n'en sort, de sa version contrastée.
+    private static async Task<T> LireAvecContrasteAsync<T>(Bitmap image, Func<Bitmap, Task<T>> lire, Func<T, bool> estVide)
+    {
+        var resultat = await lire(image);
+        if (!estVide(resultat))
         {
-            return texte;
+            return resultat;
         }
 
-        using var contraste = Contraster(agrandie);
-        return await ReconnaitreAsync(moteur, contraste);
+        using var contraste = Contraster(image);
+        return await lire(contraste);
     }
 
     /// <summary>
-    /// Lit un texte clair posé sur des fonds de couleurs différentes (pastilles de tags) : seul le texte reste noir sur blanc,
-    /// quelle que soit la couleur de la pastille. Sans résultat, retombe sur la lecture ordinaire.
+    /// Lit un texte gris clair sur fond sombre (type de compétence) : le seuil de luminosité se déduit de la zone.
+    /// Sans résultat, retombe sur la lecture ordinaire.
     /// </summary>
-    public static async Task<string> LireTexteClairAsync(Bitmap capture, Zone zone, bool seuilAdaptatif = false, string? etiquette = null)
+    public static async Task<string> LireTexteClairAsync(Bitmap capture, Zone zone, string? etiquette = null)
     {
         var moteur = ObtenirMoteur();
         using var agrandie = Agrandir(capture, zone);
-        var seuil = seuilAdaptatif ? SeuilAdaptatif(agrandie) : SeuilLuminositeTexteClair;
-        using var seuillee = IsolerTexteClair(agrandie, seuil);
+        var seuil = SeuilAdaptatif(agrandie);
+        using var seuillee = IsolerTexteClair(agrandie, c => Gris(c) >= seuil);
         Diagnostiquer(etiquette, seuil, agrandie, seuillee);
         var texte = await ReconnaitreAsync(moteur, seuillee);
         return texte.Length > 0 ? texte : await LireAsync(capture, zone);
+    }
+
+    /// <summary>
+    /// Lit des pastilles de tags alignées, de couleurs différentes : seul le texte blanc reste, en noir sur blanc.
+    /// Retourne un texte par pastille, de gauche à droite.
+    /// </summary>
+    public static async Task<IReadOnlyList<string>> LirePastillesAsync(Bitmap capture, Zone zone, string? etiquette = null)
+    {
+        var moteur = ObtenirMoteur();
+        using var agrandie = Agrandir(capture, zone);
+        using var seuillee = IsolerTexteClair(agrandie, c => Math.Min(c.R, Math.Min(c.G, c.B)) >= SeuilCanalTexteBlanc);
+        Diagnostiquer(etiquette, SeuilCanalTexteBlanc, agrandie, seuillee);
+        var mots = await ReconnaitreMotsAsync(moteur, seuillee);
+        if (mots.Count == 0)
+        {
+            mots = await LireAvecContrasteAsync(agrandie, image => ReconnaitreMotsAsync(moteur, image), lus => lus.Count == 0);
+        }
+        return RegrouperMots(mots);
+    }
+
+    // Les mots proches sont réunis : ils viennent d'une même pastille.
+    internal static List<string> RegrouperMots(IEnumerable<MotLu> mots)
+    {
+        var groupes = new List<string>();
+        MotLu? precedent = null;
+        foreach (var mot in mots.OrderBy(m => m.Gauche))
+        {
+            if (precedent is { } p && mot.Gauche - (p.Gauche + p.Largeur) <= EcartMaxMotsParHauteur * Math.Max(p.Hauteur, mot.Hauteur))
+            {
+                groupes[^1] = $"{groupes[^1]} {mot.Texte}";
+            }
+            else
+            {
+                groupes.Add(mot.Texte);
+            }
+            precedent = mot;
+        }
+        return groupes;
     }
 
     internal static float Gris(Color c) => 0.299f * c.R + 0.587f * c.G + 0.114f * c.B;
@@ -163,8 +214,8 @@ internal static class Ocr
         return dossier;
     }
 
-    // Seuil sur le gris (0 à 255) : une pastille verte, orange ou rose est plus sombre que le texte blanc. À ajuster sur de vraies captures.
-    private static Bitmap IsolerTexteClair(Bitmap source, int seuil)
+    // Les pixels reconnus comme texte passent en noir, tout le reste en blanc.
+    private static Bitmap IsolerTexteClair(Bitmap source, Func<Color, bool> estTexte)
     {
         var sortie = new Bitmap(source.Width + 2 * MargeContraste, source.Height + 2 * MargeContraste);
         using (var g = Graphics.FromImage(sortie))
@@ -176,8 +227,7 @@ internal static class Ocr
         {
             for (var x = 0; x < source.Width; x++)
             {
-                var c = source.GetPixel(x, y);
-                if (Gris(c) >= seuil)
+                if (estTexte(source.GetPixel(x, y)))
                 {
                     sortie.SetPixel(MargeContraste + x, MargeContraste + y, Color.Black);
                 }
@@ -276,7 +326,16 @@ internal static class Ocr
         return sortie;
     }
 
-    private static async Task<string> ReconnaitreAsync(OcrEngine moteur, Bitmap image)
+    private static async Task<string> ReconnaitreAsync(OcrEngine moteur, Bitmap image) =>
+        (await AnalyserAsync(moteur, image)).Text.Trim();
+
+    private static async Task<List<MotLu>> ReconnaitreMotsAsync(OcrEngine moteur, Bitmap image) =>
+        (await AnalyserAsync(moteur, image)).Lines
+            .SelectMany(ligne => ligne.Words)
+            .Select(mot => new MotLu(mot.Text, mot.BoundingRect.X, mot.BoundingRect.Width, mot.BoundingRect.Height))
+            .ToList();
+
+    private static async Task<OcrResult> AnalyserAsync(OcrEngine moteur, Bitmap image)
     {
         using var flux = new MemoryStream();
         image.Save(flux, ImageFormat.Bmp);
@@ -284,8 +343,7 @@ internal static class Ocr
 
         var decodeur = await BitmapDecoder.CreateAsync(flux.AsRandomAccessStream());
         using var logiciel = await decodeur.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
-        var resultat = await moteur.RecognizeAsync(logiciel);
-        return resultat.Text.Trim();
+        return await moteur.RecognizeAsync(logiciel);
     }
 
     // Le chiffre est la plus grande tache sombre de la zone : les traînées et points isolés sont écartés.
