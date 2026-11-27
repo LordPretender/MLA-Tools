@@ -10,6 +10,11 @@ internal static class LecteurCompetences
     // Part gauche de la bande de la popup occupée par le type (« Compétence », « Ulti »), les pastilles de tags étant à droite. À ajuster sur le jeu.
     private const double FractionType = 0.3;
 
+    // Noms des images du diagnostic OCR (voir Ocr.DiagnostiquerCapture).
+    private const string PrefixeEtiquette = "competence";
+    private const string SuffixeType = "_type";
+    private const string SuffixeTags = "_tags";
+
     // Ouvre chaque popup de compétence, la lit puis la ferme : l'onglet Compétence doit déjà être affiché.
     public static async Task<IReadOnlyList<CompetenceLue>> LireAsync(IntPtr fenetre, ConfigZones config, int delaiApresClicMs)
     {
@@ -40,9 +45,12 @@ internal static class LecteurCompetences
             throw new InvalidOperationException($"La zone « {ZonePopupTags} » n'est pas calibrée.");
         }
 
+        var etiquette = $"{PrefixeEtiquette}{numero}";
+        Ocr.DiagnostiquerCapture(capture, zone, etiquette);
         var largeurType = (int)(zone.Largeur * FractionType);
-        var texteType = await Ocr.LireTexteClairAsync(capture, zone with { Largeur = largeurType });
-        var texteTags = await Ocr.LireTexteClairAsync(capture, zone with { X = zone.X + largeurType, Largeur = zone.Largeur - largeurType });
+        // Seul le type est lu au seuil adaptatif : à droite, abaisser le seuil remplirait les pastilles claires (orange) et fondrait le texte dedans.
+        var texteType = await Ocr.LireTexteClairAsync(capture, zone with { Largeur = largeurType }, seuilAdaptatif: true, etiquette: etiquette + SuffixeType);
+        var texteTags = await Ocr.LireTexteClairAsync(capture, zone with { X = zone.X + largeurType, Largeur = zone.Largeur - largeurType }, etiquette: etiquette + SuffixeTags);
         return Construire(numero, texteType, texteTags);
     }
 

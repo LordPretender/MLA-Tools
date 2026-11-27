@@ -17,6 +17,14 @@ internal static class Ocr
     private const int MargeContraste = 40;
 
     private const int SeuilLuminositeTexteClair = 200;
+    private const int SeuilLuminositeMinimal = 120;
+    private const int NiveauxGris = 256;
+    private const int EpaisseurCadreDiagnostic = 3;
+    private const string VariableDiagnostic = "MLA_OCR_DIAGNOSTIC";
+    private const string SuffixeBrut = "_brut";
+    private const string SuffixeSeuil = "_seuil";
+    private const string SuffixeCapture = "_capture";
+    private const string ExtensionImage = ".png";
 
     // Bleu mesuré sur Édith : chiffre 0 à 16, fond du jeu 40 à 60, corps de l'étoile environ 100. À ajuster sur d'autres héros.
     private const int SeuilBleuChiffre = 25;
@@ -47,19 +55,116 @@ internal static class Ocr
     /// Lit un texte clair posé sur des fonds de couleurs différentes (pastilles de tags) : seul le texte reste noir sur blanc,
     /// quelle que soit la couleur de la pastille. Sans résultat, retombe sur la lecture ordinaire.
     /// </summary>
-    public static async Task<string> LireTexteClairAsync(Bitmap capture, Zone zone)
+    public static async Task<string> LireTexteClairAsync(Bitmap capture, Zone zone, bool seuilAdaptatif = false, string? etiquette = null)
     {
         var moteur = ObtenirMoteur();
         using var agrandie = Agrandir(capture, zone);
-        using var seuillee = IsolerTexteClair(agrandie);
+        var seuil = seuilAdaptatif ? SeuilAdaptatif(agrandie) : SeuilLuminositeTexteClair;
+        using var seuillee = IsolerTexteClair(agrandie, seuil);
+        Diagnostiquer(etiquette, seuil, agrandie, seuillee);
         var texte = await ReconnaitreAsync(moteur, seuillee);
         return texte.Length > 0 ? texte : await LireAsync(capture, zone);
     }
 
     private static float Gris(Color c) => 0.299f * c.R + 0.587f * c.G + 0.114f * c.B;
 
-    // Seuil initial sur le gris (0 à 255) : une pastille verte, orange ou rose est plus sombre que le texte blanc. À ajuster sur de vraies captures.
-    private static Bitmap IsolerTexteClair(Bitmap source)
+    // Un texte gris clair sur fond sombre (type de compétence) passe sous le seuil fixe : le seuil se déduit de la zone, borné pour ne pas prendre du bruit de fond pour du texte.
+    private static int SeuilAdaptatif(Bitmap source)
+    {
+        var histogramme = new int[NiveauxGris];
+        for (var y = 0; y < source.Height; y++)
+        {
+            for (var x = 0; x < source.Width; x++)
+            {
+                histogramme[(int)Gris(source.GetPixel(x, y))]++;
+            }
+        }
+
+        return Math.Clamp(CalculerSeuilOtsu(histogramme), SeuilLuminositeMinimal, SeuilLuminositeTexteClair);
+    }
+
+    // Méthode d'Otsu : le seuil qui sépare le mieux les niveaux de gris en deux classes (fond, texte) ; un pixel est du texte à partir de la valeur retournée.
+    internal static int CalculerSeuilOtsu(int[] histogramme)
+    {
+        long total = histogramme.Sum();
+        long sommeTotale = 0;
+        for (var i = 0; i < histogramme.Length; i++)
+        {
+            sommeTotale += (long)i * histogramme[i];
+        }
+
+        long poidsFond = 0;
+        long sommeFond = 0;
+        var meilleurSeuil = 0;
+        var meilleureVariance = -1.0;
+        for (var i = 0; i < histogramme.Length; i++)
+        {
+            poidsFond += histogramme[i];
+            sommeFond += (long)i * histogramme[i];
+            var poidsTexte = total - poidsFond;
+            if (poidsFond == 0 || poidsTexte == 0)
+            {
+                continue;
+            }
+
+            var ecart = (double)sommeFond / poidsFond - (double)(sommeTotale - sommeFond) / poidsTexte;
+            var variance = (double)poidsFond * poidsTexte * ecart * ecart;
+            if (variance > meilleureVariance)
+            {
+                meilleureVariance = variance;
+                meilleurSeuil = i + 1;
+            }
+        }
+
+        return meilleurSeuil;
+    }
+
+    // Les découpes brute et seuillée sont écrites quand la variable d'environnement désigne un dossier : on calibre le seuil sur ce que l'OCR reçoit vraiment.
+    private static void Diagnostiquer(string? etiquette, int seuil, Bitmap brute, Bitmap seuillee)
+    {
+        var dossier = DossierDiagnostic();
+        if (etiquette is null || dossier is null)
+        {
+            return;
+        }
+
+        brute.Save(Path.Combine(dossier, $"{etiquette}{SuffixeBrut}{ExtensionImage}"), ImageFormat.Png);
+        seuillee.Save(Path.Combine(dossier, $"{etiquette}{SuffixeSeuil}{seuil}{ExtensionImage}"), ImageFormat.Png);
+    }
+
+    /// <summary>Écrit la capture entière avec la zone lue encadrée : on voit où la zone calibrée tombe par rapport à ce que le jeu affichait.</summary>
+    public static void DiagnostiquerCapture(Bitmap capture, Zone zone, string etiquette)
+    {
+        var dossier = DossierDiagnostic();
+        if (dossier is null)
+        {
+            return;
+        }
+
+        using var annotee = new Bitmap(capture);
+        using (var g = Graphics.FromImage(annotee))
+        using (var stylo = new Pen(Color.Red, EpaisseurCadreDiagnostic))
+        {
+            g.DrawRectangle(stylo, zone.X, zone.Y, zone.Largeur, zone.Hauteur);
+        }
+
+        annotee.Save(Path.Combine(dossier, $"{etiquette}{SuffixeCapture}{ExtensionImage}"), ImageFormat.Png);
+    }
+
+    private static string? DossierDiagnostic()
+    {
+        var dossier = Environment.GetEnvironmentVariable(VariableDiagnostic);
+        if (string.IsNullOrEmpty(dossier))
+        {
+            return null;
+        }
+
+        Directory.CreateDirectory(dossier);
+        return dossier;
+    }
+
+    // Seuil sur le gris (0 à 255) : une pastille verte, orange ou rose est plus sombre que le texte blanc. À ajuster sur de vraies captures.
+    private static Bitmap IsolerTexteClair(Bitmap source, int seuil)
     {
         var sortie = new Bitmap(source.Width + 2 * MargeContraste, source.Height + 2 * MargeContraste);
         using (var g = Graphics.FromImage(sortie))
@@ -72,7 +177,7 @@ internal static class Ocr
             for (var x = 0; x < source.Width; x++)
             {
                 var c = source.GetPixel(x, y);
-                if (Gris(c) >= SeuilLuminositeTexteClair)
+                if (Gris(c) >= seuil)
                 {
                     sortie.SetPixel(MargeContraste + x, MargeContraste + y, Color.Black);
                 }
