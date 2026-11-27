@@ -257,7 +257,7 @@ internal sealed class FormCalibration : FormBase
         AcceptButton = _boutonEnregistrer;
         CancelButton = _boutonAnnuler;
 
-        _surface = new Surface(image, Zones);
+        _surface = new Surface(image, Zones, nomsZones);
         _surface.ZoneTracee += OnZoneTracee;
 
         _selecteur.Items.AddRange(nomsZones);
@@ -319,13 +319,16 @@ internal sealed class FormCalibration : FormBase
         private const int EpaisseurTrait = 2;
 
         private readonly Bitmap _image;
+        private readonly string[] _nomsAffiches;
         private Point _debut;
         private Rectangle _trace = Rectangle.Empty;
         private bool _traceEnCours;
 
-        public Surface(Bitmap image, Dictionary<string, Zone> zones)
+        // Les zones hors lot restent dans le dictionnaire (conservées à l'enregistrement) mais ne sont pas dessinées : elles brouilleraient la calibration en cours.
+        public Surface(Bitmap image, Dictionary<string, Zone> zones, string[] nomsAffiches)
         {
             _image = image;
+            _nomsAffiches = nomsAffiches;
             Zones = zones;
             Dock = DockStyle.Fill;
             AutoScroll = true;
@@ -347,7 +350,7 @@ internal sealed class FormCalibration : FormBase
 
             using var stylo = new Pen(Color.Lime, EpaisseurTrait);
             using var styloCourant = new Pen(Color.Red, EpaisseurTrait);
-            foreach (var (nom, zone) in Zones)
+            foreach (var (nom, zone) in Zones.Where(z => _nomsAffiches.Contains(z.Key)))
             {
                 var rect = new Rectangle(zone.X, zone.Y, zone.Largeur, zone.Hauteur);
                 e.Graphics.DrawRectangle(nom == ZoneCourante ? styloCourant : stylo, rect);
